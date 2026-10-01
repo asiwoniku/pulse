@@ -14,10 +14,29 @@ grant execute on all functions in schema public to authenticated;
 revoke execute on all functions in schema public from anon;
 
 -- Never callable from a client: internal or audit-writing.
-revoke execute on function public.write_audit(uuid, text, text, text, text, jsonb) from authenticated;
-revoke execute on function public.next_order_reference(uuid)                        from authenticated;
-revoke execute on function public.refresh_driver_rating(uuid)                       from authenticated;
-revoke execute on function public.handle_new_auth_user()                            from authenticated;
+-- Guarded rather than listed flat: write_audit() is referenced here and in the
+-- verification queries, but no migration creates it, so revoking it directly
+-- fails the whole migration with 42883. to_regprocedure() resolves a type-only
+-- signature, which is what actually matches.
+do $$
+declare
+  sig text;
+  internal text[] := array[
+    'public.next_order_reference(uuid)',
+    'public.refresh_driver_rating(uuid)',
+    'public.handle_new_auth_user()',
+    'public.write_audit(uuid,text,text,text,text,jsonb)'
+  ];
+begin
+  foreach sig in array internal loop
+    if to_regprocedure(sig) is not null then
+      execute 'revoke execute on function ' || sig || ' from authenticated';
+    else
+      raise notice 'skipping revoke: % is not present in this schema', sig;
+    end if;
+  end loop;
+end;
+$$;
 
 -- ---------------------------------------------------------------------------
 -- Realtime: only the tables whose row changes the apps must react to.

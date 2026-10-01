@@ -48,11 +48,21 @@ create policy assignments_read on public.driver_assignments
 -- assign_driver(), cancel_assignment(), respond_to_assignment() are the only
 -- ways in; they check roles and the current-assignment invariant themselves.
 
+-- Corrected: assignment_events has no driver_id column. 0007 defines
+-- assignment_id / order_id / event / actor_user_id, so the original predicate
+-- referenced a column that does not exist and failed with 42703. A driver
+-- reaches their own trail through the assignment it belongs to.
 create policy assignment_events_read on public.assignment_events
   for select to authenticated
   using (
     public.is_business_member(business_id)
-    or driver_id in (select id from public.drivers where profile_user_id = public.current_user_id())
+    or exists (
+      select 1
+      from public.driver_assignments a
+      join public.drivers d on d.id = a.driver_id
+      where a.id = assignment_id
+        and d.profile_user_id = public.current_user_id()
+    )
   );
 
 -- ---------------------------------------------------------------------------
