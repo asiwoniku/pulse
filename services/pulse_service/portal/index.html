@@ -14,12 +14,21 @@
         <span class="muted">partner portal · dispatch</span>
       </div>
       <div class="bar-right">
+        <span id="preview-flag" class="preview-flag hidden">design preview</span>
         <select id="business" class="hidden" aria-label="Workspace"></select>
         <button id="refresh" class="ghost hidden" type="button">Refresh</button>
         <span id="sync" class="muted small"></span>
         <button id="signout" class="ghost hidden" type="button">Sign out</button>
       </div>
     </header>
+
+    <div id="preview-banner" class="preview-banner hidden" role="status">
+      <strong>Design preview — these orders are not real.</strong>
+      Every order, customer and driver below is synthetic sample data held only in this
+      browser tab, so the layout can be reviewed and edited. Nothing is read from or
+      written to a database, and every write action is disabled. Remove
+      <code>?preview=1</code> from the URL to use the live portal.
+    </div>
 
     <div id="banners"></div>
 
@@ -174,6 +183,7 @@
       including when it said nothing.
     </footer>
 
+    <script src="/preview.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

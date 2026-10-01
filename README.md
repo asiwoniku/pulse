@@ -8,6 +8,7 @@ supabase/migrations/   schema, enums, state machine, RBAC, RLS, grants (0001–0
 supabase/README.md     apply order, invariants, verification queries, no-seed policy
 android/               Kotlin + Compose client (dispatch, driver, workspace)
 ios/                   Swift + SwiftUI client (not started)
+services/              stdlib-only Python service + dispatcher partner portal
 docs/                  architecture, RPC contract, ADRs
 ```
 
@@ -28,16 +29,19 @@ capabilities, one-live-assignment, human order references, driver ratings and
 workload, and the append-only trail are enforced by Postgres functions and
 triggers. A client may mirror them to dim a button; it may not decide them.
 
-**No fabricated work, ever.** There is no seed data, no fixtures, no sample
-orders, and no fake provider responses. Integrations that are not configured
-report `skipped` / `pending_confirmation` with a reason, and the apps render that
-state instead of hiding it. An empty board is a real state of the system.
+**No fabricated work, ever.** There is no seed data and no fake provider responses.
+Integrations that are not configured report `skipped` / `pending_confirmation` with a
+reason, and the apps render that state instead of hiding it. An empty board is a real
+state of the system. The single exception is the portal's design preview, which is
+switched off unless you ask for it, labels itself permanently, and cannot write to
+anything — see `services/README.md`.
 
 ## Current state
 
 | Area | State |
 |---|---|
 | Schema, state machine, RBAC, RLS, storage, realtime | written as migrations `0001`–`0016`; **not yet applied** to a project (needs `supabase link` + `db push` with credentials) |
+| Service + partner portal | written; **not yet executed** (no Python in the authoring environment). `?preview=1` renders synthetic fixtures so the UI can be reviewed without a database — see `services/README.md` |
 | Android client | source written; **not compiled** here (no Android SDK/Gradle in this workspace) |
 | iOS client | not started |
 | Providers (payments, push, maps, WhatsApp) | no credentials exist yet, so no code pretends to call them |

@@ -42,6 +42,37 @@ that the installer always registers.
 What cannot work without credentials is anything that needs real rows. The
 portal says so and stays empty rather than inventing a delivery.
 
+## Design preview: `?preview=1`
+
+To look at the interface without a configured database, open:
+
+```
+http://127.0.0.1:8000/?preview=1
+```
+
+This renders twelve synthetic orders covering the cases worth designing against —
+long names and addresses, a missing price, a missing customer row, a driver stage
+with nobody assigned, the terminal states, and every payment status including
+`pending_confirmation` and `partially_paid`. Open an order to see the detail panel
+with a full status history and the assign/price/note forms.
+
+This does not contradict the rule that Pulse never shows work that is not real. The
+rule exists so a broken RLS policy or an unconfigured project cannot be hidden behind
+a populated board, and preview is built so it cannot do that:
+
+* it is **off unless you ask for it**. Without `?preview=1` nothing changes and every
+  request goes to the service exactly as before;
+* it is **labelled everywhere**. A sticky amber banner that cannot be dismissed sits
+  above the board, and the header carries a `design preview` badge;
+* it **cannot write**. Every POST/PATCH/RPC is refused with an explanation, so a
+  design session cannot create an order, move a status, or invite anybody;
+* it is **not seeded**. The fixtures exist only in that browser tab and are never sent
+  to Postgres, so nothing can leak into a real workspace;
+* the **real** `/api/status` still answers, so the Integrations panel shows your actual
+  configuration, and the WhatsApp parser still runs for real because it works offline.
+
+To leave preview, drop `?preview=1` from the URL.
+
 ## Minimum to see your own data
 
 Put these two in `pulse/services/.env` (same values the Android app was given)

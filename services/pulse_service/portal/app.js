@@ -13,6 +13,29 @@
 const SESSION_KEY = "pulse.session";
 const POLL_MS = 20000;
 
+/* Design preview is opt-in and lives only in this tab: append ?preview=1 to the
+ * URL and the portal renders synthetic fixtures instead of calling the service, so
+ * the interface can be reviewed and edited without inventing real work. Without the
+ * flag nothing below changes and every request goes to Postgres as usual. */
+const PREVIEW = new URLSearchParams(location.search).get("preview") === "1";
+
+/* Mirrors public.payment_status (migration 0001) exactly. This list used to be
+ * ["unpaid", "partial", "paid", "refunded", "failed"], and both halves of that were
+ * wrong: "partial" is not a value the enum accepts, and "pending_confirmation" and
+ * "waived" were missing. An order in pending_confirmation — the honest state while no
+ * payment provider is configured — therefore had no matching <option>, so the select
+ * fell back to its first entry and saving a price on its own silently overwrote the
+ * payment status to "unpaid". */
+const PAYMENT_STATUSES = [
+  "unpaid",
+  "pending_confirmation",
+  "paid",
+  "partially_paid",
+  "refunded",
+  "failed",
+  "waived",
+];
+
 const state = {
   token: null,
   session: null,
@@ -24,6 +47,7 @@ const state = {
   status: null,
   poll: null,
   openOrderId: null,
+  preview: PREVIEW,
 };
 
 const el = (id) => document.getElementById(id);
@@ -54,7 +78,22 @@ function banner(kind, text, ttl) {
   return node;
 }
 
+/* Preview mode gets a banner with no dismiss and no timeout. A synthetic order that
+ * outlives its own warning is exactly the "populated demo" the product rule forbids,
+ * so the label has to outlast every other message on the page. */
+function previewNotice() {
+  const node = el("preview-banner");
+  if (node) node.classList.remove("hidden");
+  const flag = el("preview-flag");
+  if (flag) flag.classList.remove("hidden");
+}
+
 async function api(method, path, body) {
+  // Preview answers from synthetic fixtures and refuses every write, so a design
+  // session cannot create an order or send a message to a real database.
+  if (state.preview && window.PulsePreview) {
+    return window.PulsePreview.handle(method, path, body);
+  }
   const headers = { "Content-Type": "application/json" };
   if (state.token) headers.Authorization = `Bearer ${state.token}`;
   const response = await fetch(path, {
@@ -99,6 +138,18 @@ function timeAgo(value) {
 /* ---------- boot and the configuration panel ---------- */
 
 async function boot() {
+  if (PREVIEW) {
+    previewNotice();
+    // No sign-in and no token: preview never reaches Postgres, so there is nothing
+    // to authenticate against.
+    show(el("auth"), false);
+    show(el("workspace"), true);
+    show(el("refresh"), true);
+    await loadStatus();
+    await loadBusinesses();
+    enterWorkspace();
+    return;
+  }
   const stored = readSession();
   if (stored && stored.access_token) {
     state.token = stored.access_token;
@@ -127,7 +178,10 @@ async function loadStatus() {
     return;
   }
   renderProviders();
-  if (!state.status.supabase_configured) {
+  // In preview the board is full by design, so the "the board stays empty on purpose"
+  // warning would contradict what is on screen. Everything else about /api/status is
+  // still real and still shown.
+  if (!state.status.supabase_configured && !state.preview) {
     banner(
       "warn",
       "No Supabase project configured, so the board stays empty on purpose. Set " +
@@ -135,7 +189,7 @@ async function loadStatus() {
         "WhatsApp importer, the transition graph and the offline tools still work."
     );
   }
-  if (!(state.status.live || []).includes("realtime")) {
+  if (!(state.status.live || []).includes("realtime") && !state.preview) {
     banner("warn", "Realtime publication is not enabled: the board polls every 20 s.", 7000);
   }
 }
@@ -256,7 +310,7 @@ function enterWorkspace() {
   show(el("auth"), false);
   show(el("workspace"), true);
   show(el("refresh"), true);
-  show(el("signout"), true);
+  show(el("signout"), !state.preview);
   show(el("business"), Boolean(state.businessId));
   if (!state.businessId) {
     el("board").innerHTML =
@@ -265,10 +319,15 @@ function enterWorkspace() {
     offerWorkspaceCreation();
     return;
   }
-  offerWorkspaceCreation();
+  // The preview workspace already exists, so offering to create one would only
+  // produce a refusal when clicked.
+  if (!state.preview) offerWorkspaceCreation();
   loadBoard();
   if (state.poll) clearInterval(state.poll);
-  state.poll = setInterval(() => loadBoard(true).catch(() => {}), POLL_MS);
+  // Nothing changes in a preview tab, so there is nothing to poll for.
+  if (!state.preview) {
+    state.poll = setInterval(() => loadBoard(true).catch(() => {}), POLL_MS);
+  }
 }
 
 function offerWorkspaceCreation() {
@@ -320,7 +379,9 @@ async function loadBoard(quiet) {
     return;
   }
   state.board = result;
-  el("sync").textContent = `synced ${new Date().toLocaleTimeString()} · polling`;
+  el("sync").textContent = state.preview
+    ? "preview data · not polling"
+    : `synced ${new Date().toLocaleTimeString()} · polling`;
   renderCounts();
   renderBoard();
   if (state.openOrderId) refreshDetail(state.openOrderId, true);
@@ -596,12 +657,22 @@ function priceForm(order) {
   price.min = "0";
   price.placeholder = order.price_amount === null ? "amount" : String(order.price_amount);
   const payment = document.createElement("select");
-  for (const value of ["unpaid", "partial", "paid", "refunded", "failed"]) {
+  for (const value of PAYMENT_STATUSES) {
     const option = document.createElement("option");
     option.value = value;
     option.textContent = value;
     if (value === order.payment_status) option.selected = true;
     payment.append(option);
+  }
+  // If the database ever gains a payment state this build has not heard of, show it
+  // instead of letting the browser fall back to the first option and rewrite the
+  // stored value the next time somebody saves a price.
+  if (order.payment_status && !PAYMENT_STATUSES.includes(order.payment_status)) {
+    const unknown = document.createElement("option");
+    unknown.value = order.payment_status;
+    unknown.textContent = `${order.payment_status} (unknown to this build)`;
+    unknown.selected = true;
+    payment.prepend(unknown);
   }
   const button = document.createElement("button");
   button.textContent = "Save";
