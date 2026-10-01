@@ -29,19 +29,18 @@ capabilities, one-live-assignment, human order references, driver ratings and
 workload, and the append-only trail are enforced by Postgres functions and
 triggers. A client may mirror them to dim a button; it may not decide them.
 
-**No fabricated work, ever.** There is no seed data and no fake provider responses.
-Integrations that are not configured report `skipped` / `pending_confirmation` with a
-reason, and the apps render that state instead of hiding it. An empty board is a real
-state of the system. The single exception is the portal's design preview, which is
-switched off unless you ask for it, labels itself permanently, and cannot write to
-anything — see `services/README.md`.
+**No fabricated work, ever.** There is no seed data, no fixtures, no sample orders,
+and no fake provider responses — including in the web portal, which has no preview or
+demo mode. Integrations that are not configured report `skipped` / `pending_confirmation`
+with a reason, and the apps render that state instead of hiding it. An empty board is a
+real state of the system.
 
 ## Current state
 
 | Area | State |
 |---|---|
 | Schema, state machine, RBAC, RLS, storage, realtime | written as migrations `0001`–`0016`; **not yet applied** to a project (needs `supabase link` + `db push` with credentials) |
-| Service + partner portal | written; **not yet executed** (no Python in the authoring environment). The portal opens by double-clicking `services/pulse_service/portal/index.html` — no install needed — and shows synthetic fixtures with every write disabled |
+| Service + partner portal | written; **not yet executed** (no Python in the authoring environment). `python run.py` → <http://127.0.0.1:8000/>. No sample data by design |
 | Android client | source written; **not compiled** here (no Android SDK/Gradle in this workspace) |
 | iOS client | not started |
 | Providers (payments, push, maps, WhatsApp) | no credentials exist yet, so no code pretends to call them |

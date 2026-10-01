@@ -13,25 +13,6 @@
 const SESSION_KEY = "pulse.session";
 const POLL_MS = 20000;
 
-/* Design preview is opt-in and lives only in this tab: append ?preview=1 to the
- * URL and the portal renders synthetic fixtures instead of calling the service, so
- * the interface can be reviewed and edited without inventing real work. Without the
- * flag nothing below changes and every request goes to Postgres as usual.
- *
- * The one automatic case is opening index.html straight off disk. There the service
- * is not running, so there is no database and no configuration that could be
- * silently wrong — the only thing that can possibly render is the preview. Turning it
- * on cannot hide a misconfiguration, because there is none to hide. */
-const OFFLINE = location.protocol === "file:";
-const PREVIEW = OFFLINE || new URLSearchParams(location.search).get("preview") === "1";
-
-/* Mirrors public.payment_status (migration 0001) exactly. This list used to be
- * ["unpaid", "partial", "paid", "refunded", "failed"], and both halves of that were
- * wrong: "partial" is not a value the enum accepts, and "pending_confirmation" and
- * "waived" were missing. An order in pending_confirmation — the honest state while no
- * payment provider is configured — therefore had no matching <option>, so the select
- * fell back to its first entry and saving a price on its own silently overwrote the
- * payment status to "unpaid". */
 const PAYMENT_STATUSES = [
   "unpaid",
   "pending_confirmation",
@@ -53,7 +34,6 @@ const state = {
   status: null,
   poll: null,
   openOrderId: null,
-  preview: PREVIEW,
 };
 
 const el = (id) => document.getElementById(id);
@@ -84,33 +64,7 @@ function banner(kind, text, ttl) {
   return node;
 }
 
-/* Preview mode gets a banner with no dismiss and no timeout. A synthetic order that
- * outlives its own warning is exactly the "populated demo" the product rule forbids,
- * so the label has to outlast every other message on the page. */
-function previewNotice() {
-  const node = el("preview-banner");
-  if (node) node.classList.remove("hidden");
-  const flag = el("preview-flag");
-  if (flag) flag.classList.remove("hidden");
-  // How you get back to the live portal differs: a query flag can be dropped from a
-  // served URL, but a page opened off disk needs the service started first.
-  const exit = el("preview-exit");
-  if (exit) {
-    exit.innerHTML = OFFLINE
-      ? " Opened as a file, so the service is not running. Start it with " +
-        "<code>python run.py</code> in <code>pulse/services</code>, then open " +
-        "<code>http://127.0.0.1:8000/</code> for the live portal with real sign-in " +
-        "and real orders."
-      : " Remove <code>?preview=1</code> from the URL to use the live portal.";
-  }
-}
-
 async function api(method, path, body) {
-  // Preview answers from synthetic fixtures and refuses every write, so a design
-  // session cannot create an order or send a message to a real database.
-  if (state.preview && window.PulsePreview) {
-    return window.PulsePreview.handle(method, path, body);
-  }
   const headers = { "Content-Type": "application/json" };
   if (state.token) headers.Authorization = `Bearer ${state.token}`;
   const response = await fetch(path, {
@@ -155,18 +109,6 @@ function timeAgo(value) {
 /* ---------- boot and the configuration panel ---------- */
 
 async function boot() {
-  if (PREVIEW) {
-    previewNotice();
-    // No sign-in and no token: preview never reaches Postgres, so there is nothing
-    // to authenticate against.
-    show(el("auth"), false);
-    show(el("workspace"), true);
-    show(el("refresh"), true);
-    await loadStatus();
-    await loadBusinesses();
-    enterWorkspace();
-    return;
-  }
   const stored = readSession();
   if (stored && stored.access_token) {
     state.token = stored.access_token;
@@ -188,31 +130,6 @@ async function boot() {
 }
 
 async function loadStatus() {
-  if (OFFLINE) {
-    // Opened straight off disk: there is no service to ask. Report that honestly
-    // rather than showing a failed request the user can do nothing about.
-    state.status = {
-      service: "pulse-design-preview",
-      supabase_configured: false,
-      live: [],
-      missing: ["service"],
-      providers: [
-        {
-          key: "service",
-          title: "Pulse service (python run.py)",
-          unlocks: "real orders, real sign-in, the WhatsApp parser",
-          configured: false,
-          missing_env: [],
-          needs_dependency: [],
-          offline_note:
-            "Not running: this page was opened as a file. Run `python run.py` in " +
-            "pulse/services and open http://127.0.0.1:8000/ to use the live portal.",
-        },
-      ],
-    };
-    renderProviders();
-    return;
-  }
   try {
     state.status = await api("GET", "/api/status");
   } catch (error) {
@@ -220,10 +137,7 @@ async function loadStatus() {
     return;
   }
   renderProviders();
-  // In preview the board is full by design, so the "the board stays empty on purpose"
-  // warning would contradict what is on screen. Everything else about /api/status is
-  // still real and still shown.
-  if (!state.status.supabase_configured && !state.preview) {
+  if (!state.status.supabase_configured) {
     banner(
       "warn",
       "No Supabase project configured, so the board stays empty on purpose. Set " +
@@ -231,7 +145,7 @@ async function loadStatus() {
         "WhatsApp importer, the transition graph and the offline tools still work."
     );
   }
-  if (!(state.status.live || []).includes("realtime") && !state.preview) {
+  if (!(state.status.live || []).includes("realtime")) {
     banner("warn", "Realtime publication is not enabled: the board polls every 20 s.", 7000);
   }
 }
@@ -352,7 +266,7 @@ function enterWorkspace() {
   show(el("auth"), false);
   show(el("workspace"), true);
   show(el("refresh"), true);
-  show(el("signout"), !state.preview);
+  show(el("signout"), true);
   show(el("business"), Boolean(state.businessId));
   // Measured only now that the panel is visible — see moveTabIndicator.
   moveTabIndicator(el("tabs").querySelector(".active"));
@@ -363,15 +277,10 @@ function enterWorkspace() {
     offerWorkspaceCreation();
     return;
   }
-  // The preview workspace already exists, so offering to create one would only
-  // produce a refusal when clicked.
-  if (!state.preview) offerWorkspaceCreation();
+  offerWorkspaceCreation();
   loadBoard();
   if (state.poll) clearInterval(state.poll);
-  // Nothing changes in a preview tab, so there is nothing to poll for.
-  if (!state.preview) {
-    state.poll = setInterval(() => loadBoard(true).catch(() => {}), POLL_MS);
-  }
+  state.poll = setInterval(() => loadBoard(true).catch(() => {}), POLL_MS);
 }
 
 function offerWorkspaceCreation() {
@@ -423,9 +332,7 @@ async function loadBoard(quiet) {
     return;
   }
   state.board = result;
-  el("sync").textContent = state.preview
-    ? "preview data · not polling"
-    : `synced ${new Date().toLocaleTimeString()} · polling`;
+  el("sync").textContent = `synced ${new Date().toLocaleTimeString()} · polling`;
   renderCounts();
   renderBoard();
   if (state.openOrderId) refreshDetail(state.openOrderId, true);

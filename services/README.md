@@ -4,22 +4,6 @@ This folder holds the Pulse backend and the dispatcher web portal. It is written
 against the Python standard library only, so "nothing is configured" is a state
 you can open in a browser and look at, not an error screen.
 
-## Just look at the design — no install
-
-Open this file in a browser:
-
-```
-pulse/services/pulse_service/portal/index.html
-```
-
-Double-clicking it works. No Python, no `pip install`, no `.env`. Opened as a file the
-service is not running, so the page has no database to read and switches to the design
-preview on its own — twelve synthetic orders, a loud banner saying so, and every write
-action disabled. This is the quickest way to look at or change the layout.
-
-Anything that needs the service — real sign-in, real orders, the WhatsApp parser — does
-need Python, below.
-
 ## Run it
 
 You need Python 3.10 or newer. On a fresh Windows machine, install it from
@@ -58,36 +42,17 @@ that the installer always registers.
 What cannot work without credentials is anything that needs real rows. The
 portal says so and stays empty rather than inventing a delivery.
 
-## Design preview: `?preview=1`
+## No sample data anywhere — on purpose
 
-To look at the interface without a configured database, open:
+There is no preview mode, no fixture file, and no `?preview=1`. The portal shows only
+rows that Postgres actually returned under your token. If the board is empty, it is
+empty because there are no orders, and it says so rather than filling the gap with
+something invented. This is the rule in `README.md`: a populated demo would hide a
+broken RLS policy or an unconfigured project, and those are exactly the failures a
+dispatch team cannot afford to miss.
 
-```
-http://127.0.0.1:8000/?preview=1
-```
-
-This renders twelve synthetic orders covering the cases worth designing against —
-long names and addresses, a missing price, a missing customer row, a driver stage
-with nobody assigned, the terminal states, and every payment status including
-`pending_confirmation` and `partially_paid`. Open an order to see the detail panel
-with a full status history and the assign/price/note forms.
-
-This does not contradict the rule that Pulse never shows work that is not real. The
-rule exists so a broken RLS policy or an unconfigured project cannot be hidden behind
-a populated board, and preview is built so it cannot do that:
-
-* it is **off unless you ask for it**. Without `?preview=1` nothing changes and every
-  request goes to the service exactly as before;
-* it is **labelled everywhere**. A sticky amber banner that cannot be dismissed sits
-  above the board, and the header carries a `design preview` badge;
-* it **cannot write**. Every POST/PATCH/RPC is refused with an explanation, so a
-  design session cannot create an order, move a status, or invite anybody;
-* it is **not seeded**. The fixtures exist only in that browser tab and are never sent
-  to Postgres, so nothing can leak into a real workspace;
-* the **real** `/api/status` still answers, so the Integrations panel shows your actual
-  configuration, and the WhatsApp parser still runs for real because it works offline.
-
-To leave preview, drop `?preview=1` from the URL.
+If you need to look at the layout without data, sign up and create a real workspace and
+a real order. The rows are yours and disappear with your project.
 
 ## Minimum to see your own data
 
