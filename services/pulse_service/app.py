@@ -62,7 +62,10 @@ def _reason(status: int) -> str:
 def _static(path: str, start_response):
     root = PORTAL.resolve()
     candidate = (root / path.lstrip("/")).resolve()
-    if not str(candidate).startswith(str(root)) or not candidate.is_file():
+    # is_relative_to compares path segments. A plain str.startswith() would accept a
+    # sibling directory whose name merely begins with "portal" (../portal-backup/...),
+    # which is a real way to read files outside the portal.
+    if not candidate.is_relative_to(root) or not candidate.is_file():
         return _json(
             start_response,
             404,

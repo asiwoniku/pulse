@@ -358,6 +358,16 @@ function renderCounts() {
     chip.textContent = "transitions: mirror";
     box.append(chip);
   }
+  if (state.board && state.board.truncated) {
+    const chip = document.createElement("span");
+    chip.className = "chip";
+    chip.title =
+      `Only the ${state.board.limit} most recent orders were loaded and this ` +
+      "workspace holds more, so the counts here are not workspace totals. Older " +
+      "orders are still in the database.";
+    chip.textContent = `truncated: ${state.board.limit} most recent`;
+    box.append(chip);
+  }
 }
 
 function renderBoard() {

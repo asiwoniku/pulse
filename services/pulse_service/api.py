@@ -278,6 +278,9 @@ ORDER_COLUMNS = (
     "requested_at,scheduled_at,promised_at,price_amount,currency,payment_status,"
     "payment_method,customer_id,tracking_token,created_at,status_changed_at"
 )
+# The board renders the most recent orders for one workspace. It is a window, not
+# the whole truth, so the response has to say so whenever the window is short.
+BOARD_LIMIT = 50
 
 
 def _in_filter(values: list[str]) -> str:
@@ -356,12 +359,17 @@ def _board(request: Request) -> tuple[int, Any]:
     if not business_id:
         raise ServiceError("business_id is required.", source="pulse")
 
-    orders = db.select(
+    # One row beyond the window is fetched purely to detect truncation. A board that
+    # quietly shows 50 of 300 orders is indistinguishable from a workspace holding 50
+    # orders, and a dispatcher would act on the short list as if it were everything.
+    fetched = db.select(
         "orders",
         f"select={ORDER_COLUMNS}&business_id=eq.{business_id}"
-        f"&order=created_at.desc&limit=50",
+        f"&order=created_at.desc&limit={BOARD_LIMIT + 1}",
         token,
     ) or []
+    truncated = len(fetched) > BOARD_LIMIT
+    orders = fetched[:BOARD_LIMIT]
 
     customer_ids = sorted({o["customer_id"] for o in orders if o.get("customer_id")})
     order_ids = [o["id"] for o in orders]
@@ -442,6 +450,8 @@ def _board(request: Request) -> tuple[int, Any]:
         "business_id": business_id,
         "orders": rows,
         "counts": counts,
+        "limit": BOARD_LIMIT,
+        "truncated": truncated,
         "transition_source": (
             "order_transition_edges()" if edges is not MIRROR_EDGES else "mirror"
         ),
@@ -452,8 +462,14 @@ def _board(request: Request) -> tuple[int, Any]:
             token,
         )
         or [],
-        "note": "RLS filtered every read with your token. Assignments are the current "
-        "ones only.",
+        "note": (
+            f"Only the {BOARD_LIMIT} most recent orders are shown and this workspace has "
+            "more, so these counts are not the workspace totals. RLS filtered every "
+            "read with your token; assignments are the current ones only."
+            if truncated
+            else "RLS filtered every read with your token. Assignments are the current "
+            "ones only."
+        ),
     }
 
 

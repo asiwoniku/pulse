@@ -142,8 +142,9 @@ PROVIDERS: tuple[Provider, ...] = (
         requires=("PAYSTACK_SECRET_KEY",),
         docs="https://paystack.com/docs/api/transaction/#verify",
         optional=("PAYSTACK_WEBHOOK_SECRET",),
-        offline_note="The database still records payment through "
-        "mark_payment_paid() by staff; this only verifies somebody's claim.",
+        offline_note="Recording a payment is still a staff UPDATE of "
+        "orders.payment_status, decided by guard_order_columns() (0013) and RLS "
+        "(0015); this only verifies somebody's claim.",
     ),
     Provider(
         key="payments:flutterwave",

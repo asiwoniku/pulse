@@ -58,9 +58,11 @@ visible — the portal's scoping switch reflects what the database returned, and
 falls back to "filter locally, tell the user why" when RLS cannot be relied on.
 
 The board reads direct rows (`orders`, `assignments`, `order_status_history`,
-`delivery_facts`). Supabase returns at most 1000 rows per request, so the
-service refuses rather than showing a silently truncated board, and
-`/api/orders/rich` is the RPC-shaped replacement the mobile client can move to.
+`delivery_facts`) and shows the 50 most recent orders for the workspace. When a
+workspace holds more than that, the response carries `truncated: true` and the portal
+renders a `truncated: 50 most recent` chip, so a short list is never mistaken for the
+whole workload. `/api/orders/rich` is the RPC-shaped replacement the mobile client can
+move to when a window is not enough.
 
 ## Everything else is opt-in, one section at a time
 
@@ -83,9 +85,22 @@ the checklist reports which of those states you are in.
 
 ## Verification status
 
-Nothing in this folder has been executed by the author of it — this machine has
-no Python. The checks that ran were structural: every DOM id referenced by
-`portal/app.js` exists in `portal/index.html`, every route the portal calls
-matches a handler in `pulse_service/api.py`, and no provider call site uses a
-signature the provider does not have. Start the server and expect the first run
-to surface anything a static read cannot see.
+Nothing in this folder has been executed — the machine this was written on has no
+Python. The checks that ran are static, and they are the ones worth repeating:
+
+* every DOM id referenced by `portal/app.js` resolves — either it is in
+  `portal/index.html`, or `offerWorkspaceCreation()` builds it at runtime;
+* every route the portal calls matches a handler in `pulse_service/api.py`;
+* every name in `ALLOWED_RPC` exists as a function in `supabase/migrations/`, so the
+  allow-list cannot name something the database does not have;
+* the RPC parameters the portal sends (`p_name`, `p_city`, `p_currency`,
+  `p_business_id`, `p_email`, `p_role`, `p_display_name`) match the signatures in
+  `0010_workspace_lifecycle.sql`.
+
+Two defects found by those checks were fixed: the board silently truncated to 50
+orders while claiming it never would, and the payment provider notes pointed staff at
+a `mark_payment_paid()` RPC that does not exist in any migration (recording a payment
+is a guarded `UPDATE` of `orders.payment_status`, see `0013` and `0015`).
+
+Start the server and expect the first run to surface anything a static read cannot
+see — in particular, every network path here has never been called.
