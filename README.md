@@ -41,7 +41,7 @@ anything — see `services/README.md`.
 | Area | State |
 |---|---|
 | Schema, state machine, RBAC, RLS, storage, realtime | written as migrations `0001`–`0016`; **not yet applied** to a project (needs `supabase link` + `db push` with credentials) |
-| Service + partner portal | written; **not yet executed** (no Python in the authoring environment). `?preview=1` renders synthetic fixtures so the UI can be reviewed without a database — see `services/README.md` |
+| Service + partner portal | written; **not yet executed** (no Python in the authoring environment). The portal opens by double-clicking `services/pulse_service/portal/index.html` — no install needed — and shows synthetic fixtures with every write disabled |
 | Android client | source written; **not compiled** here (no Android SDK/Gradle in this workspace) |
 | iOS client | not started |
 | Providers (payments, push, maps, WhatsApp) | no credentials exist yet, so no code pretends to call them |

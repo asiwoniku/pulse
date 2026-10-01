@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pulse · Partner portal</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <header class="bar">
@@ -24,10 +24,12 @@
 
     <div id="preview-banner" class="preview-banner hidden" role="status">
       <strong>Design preview — these orders are not real.</strong>
-      Every order, customer and driver below is synthetic sample data held only in this
-      browser tab, so the layout can be reviewed and edited. Nothing is read from or
-      written to a database, and every write action is disabled. Remove
-      <code>?preview=1</code> from the URL to use the live portal.
+      <span id="preview-explain">
+        Every order, customer and driver below is synthetic sample data held only in this
+        browser tab, so the layout can be reviewed and edited. Nothing is read from or
+        written to a database, and every write action is disabled.
+      </span>
+      <span id="preview-exit"></span>
     </div>
 
     <div id="banners"></div>
@@ -71,11 +73,12 @@
           </div>
 
           <div class="col side">
-            <nav class="tabs" id="tabs">
-              <button data-tab="new" class="active" type="button">New order</button>
-              <button data-tab="import" type="button">Import</button>
-              <button data-tab="team" type="button">Team</button>
-              <button data-tab="tools" type="button">Tools</button>
+            <nav class="tabs" id="tabs" role="tablist" aria-label="Partner tools">
+              <span class="tab-indicator" aria-hidden="true"></span>
+              <button data-tab="new" class="active" type="button" role="tab" aria-selected="true">New order</button>
+              <button data-tab="import" type="button" role="tab" aria-selected="false">Import</button>
+              <button data-tab="team" type="button" role="tab" aria-selected="false">Team</button>
+              <button data-tab="tools" type="button" role="tab" aria-selected="false">Tools</button>
             </nav>
 
             <div class="panel" id="tab-new">
@@ -183,7 +186,7 @@
       including when it said nothing.
     </footer>
 
-    <script src="/preview.js"></script>
-    <script src="/app.js"></script>
+    <script src="preview.js"></script>
+    <script src="app.js"></script>
   </body>
 </html>

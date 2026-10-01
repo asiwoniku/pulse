@@ -4,6 +4,22 @@ This folder holds the Pulse backend and the dispatcher web portal. It is written
 against the Python standard library only, so "nothing is configured" is a state
 you can open in a browser and look at, not an error screen.
 
+## Just look at the design — no install
+
+Open this file in a browser:
+
+```
+pulse/services/pulse_service/portal/index.html
+```
+
+Double-clicking it works. No Python, no `pip install`, no `.env`. Opened as a file the
+service is not running, so the page has no database to read and switches to the design
+preview on its own — twelve synthetic orders, a loud banner saying so, and every write
+action disabled. This is the quickest way to look at or change the layout.
+
+Anything that needs the service — real sign-in, real orders, the WhatsApp parser — does
+need Python, below.
+
 ## Run it
 
 You need Python 3.10 or newer. On a fresh Windows machine, install it from

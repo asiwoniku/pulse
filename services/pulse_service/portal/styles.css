@@ -99,9 +99,58 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .status.off { border-color: #666; color: #aaa; }
 .status.dep { border-color: #a80; color: #fd6; }
 .empty { padding: 18px; color: var(--muted); border: 1px dashed var(--line); border-radius: 10px; }
-.tabs { display: flex; gap: 6px; }
-.tabs button { font-size: 0.82rem; padding: 6px 10px; background: transparent; border: 1px solid var(--line); color: var(--muted); }
-.tabs button.active { background: #1c2632; color: var(--text); border-color: #3b4a5c; }
+/* Segmented tab bar. The indicator is one element that slides and resizes to match
+ * the active button, rather than four buttons each drawing their own border — that
+ * is what makes the movement read as a single object travelling along the bar. */
+.tabs {
+  position: relative;
+  display: flex;
+  background: #0f141b;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 4px;
+}
+.tabs .tab-indicator {
+  position: absolute;
+  top: 4px;
+  left: 0;
+  height: calc(100% - 8px);
+  background: #1c2632;
+  border: 1px solid #3b4a5c;
+  border-radius: 8px;
+  pointer-events: none;
+  transition: transform 0.26s cubic-bezier(0.4, 0, 0.2, 1),
+    width 0.26s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.tabs button {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 auto;
+  font-size: 0.82rem;
+  padding: 6px 10px;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font-weight: 500;
+  white-space: nowrap;
+  transition: color 0.18s ease;
+}
+.tabs button:hover { color: var(--text); }
+.tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tabs button.active { color: var(--text); }
+
+/* Panels are display:none when hidden, so the reveal is a one-shot keyframe rather
+ * than a transition, restarted in showPanel() by forcing a reflow. */
+@keyframes panel-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.panel-in { animation: panel-in 0.2s ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .tabs .tab-indicator,
+  .tabs button { transition: none; }
+  .panel-in { animation: none; }
+}
 table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
 th, td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { color: var(--muted); font-weight: 500; }

@@ -314,6 +314,17 @@
   /* One request that genuinely works with no credentials, so it is left alone: the
    * WhatsApp parser runs offline and its real output is worth looking at. */
   function realApi(verb, path, body) {
+    if (location.protocol === "file:") {
+      // These two endpoints genuinely need the running service. Say that plainly
+      // instead of surfacing the browser's "Failed to fetch".
+      return Promise.reject(
+        new Error(
+          "This needs the Pulse service, which is not running because this page was " +
+            "opened as a file. Start it with `python run.py` in pulse/services, then " +
+            "open http://127.0.0.1:8000/ to use the live portal."
+        )
+      );
+    }
     return fetch(path, {
       method: verb,
       headers: { "Content-Type": "application/json" },

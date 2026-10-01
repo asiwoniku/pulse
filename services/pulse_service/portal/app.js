@@ -16,8 +16,14 @@ const POLL_MS = 20000;
 /* Design preview is opt-in and lives only in this tab: append ?preview=1 to the
  * URL and the portal renders synthetic fixtures instead of calling the service, so
  * the interface can be reviewed and edited without inventing real work. Without the
- * flag nothing below changes and every request goes to Postgres as usual. */
-const PREVIEW = new URLSearchParams(location.search).get("preview") === "1";
+ * flag nothing below changes and every request goes to Postgres as usual.
+ *
+ * The one automatic case is opening index.html straight off disk. There the service
+ * is not running, so there is no database and no configuration that could be
+ * silently wrong — the only thing that can possibly render is the preview. Turning it
+ * on cannot hide a misconfiguration, because there is none to hide. */
+const OFFLINE = location.protocol === "file:";
+const PREVIEW = OFFLINE || new URLSearchParams(location.search).get("preview") === "1";
 
 /* Mirrors public.payment_status (migration 0001) exactly. This list used to be
  * ["unpaid", "partial", "paid", "refunded", "failed"], and both halves of that were
@@ -86,6 +92,17 @@ function previewNotice() {
   if (node) node.classList.remove("hidden");
   const flag = el("preview-flag");
   if (flag) flag.classList.remove("hidden");
+  // How you get back to the live portal differs: a query flag can be dropped from a
+  // served URL, but a page opened off disk needs the service started first.
+  const exit = el("preview-exit");
+  if (exit) {
+    exit.innerHTML = OFFLINE
+      ? " Opened as a file, so the service is not running. Start it with " +
+        "<code>python run.py</code> in <code>pulse/services</code>, then open " +
+        "<code>http://127.0.0.1:8000/</code> for the live portal with real sign-in " +
+        "and real orders."
+      : " Remove <code>?preview=1</code> from the URL to use the live portal.";
+  }
 }
 
 async function api(method, path, body) {
@@ -171,6 +188,31 @@ async function boot() {
 }
 
 async function loadStatus() {
+  if (OFFLINE) {
+    // Opened straight off disk: there is no service to ask. Report that honestly
+    // rather than showing a failed request the user can do nothing about.
+    state.status = {
+      service: "pulse-design-preview",
+      supabase_configured: false,
+      live: [],
+      missing: ["service"],
+      providers: [
+        {
+          key: "service",
+          title: "Pulse service (python run.py)",
+          unlocks: "real orders, real sign-in, the WhatsApp parser",
+          configured: false,
+          missing_env: [],
+          needs_dependency: [],
+          offline_note:
+            "Not running: this page was opened as a file. Run `python run.py` in " +
+            "pulse/services and open http://127.0.0.1:8000/ to use the live portal.",
+        },
+      ],
+    };
+    renderProviders();
+    return;
+  }
   try {
     state.status = await api("GET", "/api/status");
   } catch (error) {
@@ -312,6 +354,8 @@ function enterWorkspace() {
   show(el("refresh"), true);
   show(el("signout"), !state.preview);
   show(el("business"), Boolean(state.businessId));
+  // Measured only now that the panel is visible — see moveTabIndicator.
+  moveTabIndicator(el("tabs").querySelector(".active"));
   if (!state.businessId) {
     el("board").innerHTML =
       '<div class="empty">You belong to no workspace yet. Use Team → Create workspace: ' +
@@ -718,13 +762,46 @@ function noteForm(order) {
 
 /* ---------- side panel: create and import ---------- */
 
+/* The indicator is a real element measured from the active button rather than a
+ * fixed-width guess, so the bar slides correctly whatever the labels end up being
+ * — including at the narrow breakpoint where they no longer fit on one row. */
+function moveTabIndicator(button) {
+  const nav = el("tabs");
+  const bar = nav && nav.querySelector(".tab-indicator");
+  if (!bar || !button) return;
+  // The tab bar lives inside the workspace panel, so before that panel is shown
+  // every button measures 0px. Recording that would leave the indicator invisible
+  // until something happened to resize the window, so it is simply left alone.
+  if (!button.offsetWidth) return;
+  bar.style.width = `${button.offsetWidth}px`;
+  bar.style.transform = `translateX(${button.offsetLeft}px)`;
+}
+
+/* Panels are toggled with display:none, which cannot be transitioned. So the panel
+ * is revealed first and then given a one-shot animation class, restarted by forcing
+ * a reflow. */
+function showPanel(node) {
+  if (!node) return;
+  node.classList.remove("hidden", "panel-in");
+  void node.offsetWidth;
+  node.classList.add("panel-in");
+}
+
 function selectTab(name) {
-  for (const button of el("tabs").querySelectorAll("button")) {
-    button.classList.toggle("active", button.dataset.tab === name);
+  const buttons = el("tabs").querySelectorAll("button");
+  let active = null;
+  for (const button of buttons) {
+    const on = button.dataset.tab === name;
+    button.classList.toggle("active", on);
+    button.setAttribute("aria-selected", String(on));
+    if (on) active = button;
   }
   for (const panel of ["new", "import", "team", "tools"]) {
-    show(el(`tab-${panel}`), panel === name);
+    const node = el(`tab-${panel}`);
+    if (panel === name) showPanel(node);
+    else show(node, false);
   }
+  moveTabIndicator(active);
 }
 
 async function createOrder() {
@@ -927,9 +1004,31 @@ el("geocode").addEventListener("click", geocode);
 el("route").addEventListener("click", routeEta);
 el("verify").addEventListener("click", verifyPayment);
 
-for (const button of el("tabs").querySelectorAll("button")) {
+const tabButtons = [...el("tabs").querySelectorAll("button")];
+for (const button of tabButtons) {
   button.addEventListener("click", () => selectTab(button.dataset.tab));
 }
+// Left/Right move between tabs and Home/End jump to the ends, which is what a
+// tablist is expected to do once it has been given role="tablist".
+el("tabs").addEventListener("keydown", (event) => {
+  const index = tabButtons.indexOf(document.activeElement);
+  if (index === -1) return;
+  const step = { ArrowRight: 1, ArrowLeft: -1 };
+  let next = null;
+  if (event.key in step) next = (index + step[event.key] + tabButtons.length) % tabButtons.length;
+  else if (event.key === "Home") next = 0;
+  else if (event.key === "End") next = tabButtons.length - 1;
+  if (next === null) return;
+  event.preventDefault();
+  tabButtons[next].focus();
+  selectTab(tabButtons[next].dataset.tab);
+});
+// The indicator is measured from layout, so it is placed once at start and
+// re-measured whenever the column width changes.
+selectTab("new");
+window.addEventListener("resize", () => {
+  moveTabIndicator(el("tabs").querySelector(".active"));
+});
 
 el("business").addEventListener("change", (event) => {
   state.businessId = event.target.value;
