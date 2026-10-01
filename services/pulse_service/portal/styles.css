@@ -1,0 +1,112 @@
+:root {
+  --bg: #0d1117;
+  --panel: #151b23;
+  --line: #263140;
+  --text: #e6edf3;
+  --muted: #9aa7b4;
+  --accent: #4ea1ff;
+  --good: #2ecc71;
+  --warn: #f0b429;
+  --bad: #ff6b6b;
+  font-size: 15px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+header.bar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 18px;
+  background: #0b0f14;
+  border-bottom: 1px solid var(--line);
+}
+.brand { display: flex; align-items: center; gap: 8px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+.bar-right { display: flex; align-items: center; gap: 8px; }
+main { padding: 16px; max-width: 1400px; margin: 0 auto; }
+.grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr); gap: 16px; }
+.col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px;
+}
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+h2, h3 { margin: 0 0 8px; font-size: 1rem; }
+label { display: block; margin: 8px 0; font-size: 0.85rem; color: var(--muted); }
+input, select, textarea, button {
+  font: inherit;
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 10px;
+  color: var(--text);
+  background: #0f141b;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+button { cursor: pointer; background: var(--accent); border-color: transparent; color: #04121f; font-weight: 600; width: auto; }
+button.ghost { background: transparent; border-color: var(--line); color: var(--text); font-weight: 500; }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.row.two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.check { display: flex; align-items: center; gap: 8px; }
+.check input { width: auto; margin: 0; }
+.hidden { display: none !important; }
+.muted { color: var(--muted); }
+.small { font-size: 0.8rem; }
+.note { font-size: 0.82rem; color: var(--muted); white-space: pre-wrap; }
+.out {
+  margin: 10px 0 0;
+  padding: 10px;
+  min-height: 40px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.78rem;
+  background: #0f141b;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.banner { padding: 10px 18px; font-size: 0.85rem; border-bottom: 1px solid var(--line); }
+.banner.warn { background: #2a2010; color: #ffd479; }
+.banner.bad { background: #2a1214; color: #ffb3b3; }
+.banner.good { background: #10231a; color: #9ff0be; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 12px; }
+.chip {
+  padding: 3px 8px;
+  font-size: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+}
+.board { display: flex; flex-direction: column; gap: 10px; }
+.order { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: #121821; }
+.order h4 { margin: 0; font-size: 0.95rem; }
+.order .meta { color: var(--muted); font-size: 0.8rem; margin: 4px 0 8px; }
+.order .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.order .actions button { font-size: 0.78rem; padding: 5px 9px; }
+.status { font-size: 0.72rem; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--line); }
+.status.live { border-color: #2c6; color: #9f6; }
+.status.off { border-color: #666; color: #aaa; }
+.status.dep { border-color: #a80; color: #fd6; }
+.empty { padding: 18px; color: var(--muted); border: 1px dashed var(--line); border-radius: 10px; }
+.tabs { display: flex; gap: 6px; }
+.tabs button { font-size: 0.82rem; padding: 6px 10px; background: transparent; border: 1px solid var(--line); color: var(--muted); }
+.tabs button.active { background: #1c2632; color: var(--text); border-color: #3b4a5c; }
+table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+th, td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; }
+code { background: #0f141b; padding: 1px 4px; border-radius: 4px; font-size: 0.85em; }
+footer { padding: 18px; text-align: center; border-top: 1px solid var(--line); }
+@media (max-width: 980px) {
+  .grid { grid-template-columns: 1fr; }
+}

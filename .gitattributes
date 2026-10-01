@@ -1,0 +1,15 @@
+# gradlew is a POSIX sh script. A CRLF line ending makes the shebang fail on
+# Linux and macOS, so it must stay LF regardless of who checks it out.
+android/gradlew text eol=lf
+android/gradlew.bat text eol=crlf
+
+# Migrations and portal text are edited on Windows but must not gain CRLF:
+# PostgREST queries are built from these strings, and git would otherwise
+# rewrite them per-checkout.
+supabase/migrations/*.sql text eol=lf
+services/pulse_service/portal/*.{html,css,js} text eol=lf
+services/pulse_service/*.py text eol=lf
+
+# Binary-ish assets must never be line-ending translated.
+*.png binary
+*.jar binary

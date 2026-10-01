@@ -1,0 +1,7 @@
+<resources>
+    <!-- Compose draws everything; this only removes the framework action bar so
+         the first frame is not a stock toolbar. -->
+    <style name="Theme.Pulse" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">#0B3D91</item>
+    </style>
+</resources>

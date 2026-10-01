@@ -1,0 +1,126 @@
+# Supabase schema
+
+Sixteen migrations build the whole control plane: schema, the order state
+machine, RBAC, and row level security. Nothing in here contains demo data.
+
+## Applying
+
+```bash
+supabase link --project-ref <ref>
+supabase db push            # applies migrations in filename order
+```
+
+Or through the dashboard SQL editor, running each file top to bottom in numeric
+order. `0001`–`0016` are strictly ordered: later files call helpers defined in
+earlier ones, and `0014` revokes the privileges that `0016` re-grants.
+
+There is no `seed.sql` and no demo data (see below), so `supabase db reset`
+leaves an empty but fully functional database. That is the intended state.
+
+## Migration map
+
+| File | Responsibility |
+|---|---|
+| 0001 | extensions, every enum, `set_updated_at`, `forbid_mutation` |
+| 0002 | `profiles`, signup trigger, `current_user_id`, `current_user_is_platform_admin` |
+| 0003 | businesses, memberships, invitations, `member_role`, `is_business_member`, `has_business_role`, `can_operate`, `shares_business_with`, `current_business_ids` |
+| 0004 | customers, drivers, vehicles, locations, devices + business-consistency trigger |
+| 0005 | orders, `order_status_history`, per-business yearly reference sequences |
+| 0006 | the state machine: legal transitions, driver vs staff stage rules, history writer |
+| 0007 | `driver_assignments`, `assignment_events`, `driver_has_current_assignment` |
+| 0008 | `assign_driver`, `cancel_assignment` |
+| 0009 | `create_delivery_order`, `respond_to_assignment`, `record_delivery_attempt`, `capture_proof_of_delivery`, `set_driver_availability`, `register_device` |
+| 0010 | `create_business`, `invite_worker`, `accept_invitation`, `current_user_email` |
+| 0011 | notifications, payment attempts, moving requests and items |
+| 0012 | feedback (completed orders only), `audit_logs`, rating refresh |
+| 0013 | column guards, `is_order_participant`, `is_moving_participant`, `active_business_id` |
+| 0014 | enable RLS everywhere, revoke defaults, identity/business/people policies |
+| 0015 | policies for orders, assignments, notifications, payments, moving, feedback, audit |
+| 0016 | grants, realtime publication, `proofs` storage bucket and its policies |
+
+## Why there is no seed data
+
+The product rule is that the platform must never show fabricated work. Demo
+orders would leak into metrics, driver ratings, and dispatch decisions, and a
+dispatch team cannot tell invented rows from real ones after a week of use. So:
+
+- no `seed.sql`, no fixture scripts, no `insert` of business rows anywhere;
+- customers appear only when a real order is created or a real number is
+  imported (`customers.source` records which happened);
+- `average_rating` and `completed_order_count` stay NULL/0 until real feedback
+  or real completions exist (`0012`, `on_order_completed`);
+- payment, notification, and WhatsApp integrations keep `status = 'skipped'`
+  plus a `failure_reason` naming what is missing — an empty integration reads
+  as empty in the UI instead of pretending to work.
+
+For local exploration, create your own first workspace through the app: sign up,
+call `create_business`, then `invite_worker`. Those rows are yours and disappear
+with your project.
+
+## Security model in one paragraph
+
+Every authorization helper is `SECURITY DEFINER` with `search_path` pinned, so
+policies can ask membership questions without recursing into their own table's
+RLS. Policies grant reads by membership or participation and grant writes only to
+`can_operate(business_id)`; the writes that must be atomic or role-checked are
+`SECURITY DEFINER` RPCs, and their tables expose no INSERT policy at all. `0016`
+revokes execute on `write_audit`, `next_order_reference`,
+`refresh_driver_rating`, and `handle_new_auth_user` because those are internal.
+
+**When you add an RPC, add its grant.** `0016` grants execute to `authenticated`
+for the functions that existed when it was written; a new function is not
+callable from the apps until it is granted (or `0016` is re-run).
+
+## Verifying a fresh project
+
+Run these after `db push`; each returns what the comment expects.
+
+```sql
+-- any hit = a table with RLS still off
+select c.relname
+from pg_class c join pg_namespace n on n.oid = c.relnamespace
+where n.nspname = 'public' and c.relkind = 'r'
+  and c.relname <> 'spatial_ref_sys'
+  and c.relrowsecurity is false;
+
+select count(*) as policies from pg_policies where schemaname = 'public';  -- > 30
+
+select tablename from pg_publication_tables
+where pubname = 'supabase_realtime';  -- orders, driver_assignments,
+                                     -- assignment_events, notifications
+
+-- all four must be false
+select proname,
+       has_function_privilege('authenticated', p.oid, 'execute') as can_execute
+from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public'
+  and proname in ('write_audit','next_order_reference',
+                  'refresh_driver_rating','handle_new_auth_user');
+
+-- the real proof: the schema must be empty of business data
+select (select count(*) from orders)      + (select count(*) from customers)
+     + (select count(*) from drivers)     + (select count(*) from businesses) as seeded_rows;
+```
+
+If a policy helper is renamed, `create policy` fails loudly at migration time —
+that is the intended failure mode, not a silent fallthrough to permissive.
+
+## Invariants the database enforces
+
+
+- **Status transitions** (`0006`): `guard_order_status_change` rejects illegal
+  transitions and enforces driver-only stages (`arrived`,
+  `delivery_attempt_failed`) versus staff-only stages; re-applying the current
+  status is a no-op so retries are safe.
+- **Append-only history** (`0005`, `0006`, `0012`): `order_status_history`,
+  `assignment_events`, `audit_logs`, and `order_feedback` reject UPDATE/DELETE
+  through `forbid_mutation`.
+- **One live assignment per order** (`0007`): partial unique index on
+  `driver_assignments (order_id) where is_current`.
+- **Driver/business consistency** (`0004`): a `drivers` row cannot pair someone
+  else's profile with a business they do not belong to.
+- **Column guards** (`0013`): a driver cannot edit price, payment state, their own
+  rating, counters, or ownership links.
+- **No client-side references** (`0005`): `ORD-YYYY-NNNNN` comes from locked
+  per-business-per-year sequences, and `next_order_reference` is not executable by
+  `authenticated`.

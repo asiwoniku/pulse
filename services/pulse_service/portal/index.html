@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pulse · Partner portal</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <div class="brand">
+        <span class="dot"></span>
+        <strong>Pulse</strong>
+        <span class="muted">partner portal · dispatch</span>
+      </div>
+      <div class="bar-right">
+        <select id="business" class="hidden" aria-label="Workspace"></select>
+        <button id="refresh" class="ghost hidden" type="button">Refresh</button>
+        <span id="sync" class="muted small"></span>
+        <button id="signout" class="ghost hidden" type="button">Sign out</button>
+      </div>
+    </header>
+
+    <div id="banners"></div>
+
+    <main>
+      <section id="auth" class="panel">
+        <h2>Sign in</h2>
+        <p class="muted">
+          Same account as the mobile app. This portal has no separate user table and
+          no shared demo login: every read is filtered by row-level security using
+          your own token.
+        </p>
+        <label>Email <input id="email" type="email" autocomplete="username" /></label>
+        <label>Password
+          <input id="password" type="password" autocomplete="current-password" />
+        </label>
+        <div class="row">
+          <button id="signin" type="button">Sign in</button>
+          <button id="signup" class="ghost" type="button">Create account</button>
+        </div>
+        <p id="auth-note" class="note"></p>
+      </section>
+
+      <section id="workspace" class="hidden">
+        <div class="grid">
+          <div class="col">
+            <div class="panel">
+              <div class="panel-head">
+                <h2>Dispatch board</h2>
+                <select id="filter" aria-label="Filter by status">
+                  <option value="">All statuses</option>
+                </select>
+              </div>
+              <div id="counts" class="chips"></div>
+              <div id="board" class="board"></div>
+            </div>
+            <div class="panel hidden" id="detail">
+              <div class="panel-head"><h2 id="detail-title">Order</h2></div>
+              <div id="detail-body"></div>
+            </div>
+          </div>
+
+          <div class="col side">
+            <nav class="tabs" id="tabs">
+              <button data-tab="new" class="active" type="button">New order</button>
+              <button data-tab="import" type="button">Import</button>
+              <button data-tab="team" type="button">Team</button>
+              <button data-tab="tools" type="button">Tools</button>
+            </nav>
+
+            <div class="panel" id="tab-new">
+              <h3>Create delivery order</h3>
+              <p class="muted small">
+                Calls <code>create_delivery_order()</code>. Status, reference and the
+                customer row are created by Postgres, never by this form.
+              </p>
+              <label>Customer name <input id="o-name" /></label>
+              <label>Customer phone <input id="o-phone" placeholder="+234…" /></label>
+              <label>Pickup <input id="o-pickup" /></label>
+              <label>Destination <input id="o-dest" /></label>
+              <label>Items / description
+                <textarea id="o-desc" rows="3"></textarea>
+              </label>
+              <div class="row two">
+                <label>Price <input id="o-price" type="number" min="0" step="0.01" /></label>
+                <label>Payment
+                  <select id="o-payment">
+                    <option value="">not set</option>
+                    <option value="cash">cash</option>
+                    <option value="transfer">transfer</option>
+                    <option value="card">card</option>
+                  </select>
+                </label>
+              </div>
+              <button id="create" type="button">Create order</button>
+              <p class="note" id="create-note"></p>
+            </div>
+            <div class="panel hidden" id="tab-import">
+              <h3>Paste a WhatsApp order</h3>
+              <p class="muted small">
+                Parsing runs on this machine with no key. The output is a draft plus
+                the questions a human still has to ask — nothing is created until you
+                press the button and your own token is used.
+              </p>
+              <textarea id="wa-text" rows="7" placeholder="Pick up from 12 Adeola Odeku, Victoria Island and deliver to Ikoyi Links. 3 cartons and a sofa. Pay 45,000 naira. Call 08031234567"></textarea>
+              <div class="row">
+                <button id="parse" type="button">Parse into draft</button>
+                <button id="use-draft" class="ghost hidden" type="button">Use in New order</button>
+              </div>
+              <pre id="parse-out" class="out"></pre>
+            </div>
+
+            <div class="panel hidden" id="tab-team">
+              <h3>Invite a worker</h3>
+              <p class="muted small">
+                <code>invite_worker()</code> creates the code. Email is a separate,
+                optional step — if SMTP is not configured you still get the code to
+                hand over yourself.
+              </p>
+              <label>Email <input id="i-email" type="email" /></label>
+              <div class="row two">
+                <label>Role
+                  <select id="i-role">
+                    <option value="staff">staff</option>
+                    <option value="admin">admin</option>
+                    <option value="driver">driver</option>
+                  </select>
+                </label>
+                <label>Display name <input id="i-name" /></label>
+              </div>
+              <label class="check">
+                <input id="i-send" type="checkbox" /> also email it (needs SMTP)
+              </label>
+              <button id="invite" type="button">Create invitation</button>
+              <pre id="invite-out" class="out"></pre>
+            </div>
+
+            <div class="panel hidden" id="tab-tools">
+              <h3>Geocode and route</h3>
+              <label>Address
+                <input id="g-text" placeholder="12 Adeola Odeku, Victoria Island" />
+              </label>
+              <button id="geocode" type="button">Geocode</button>
+              <div class="row two">
+                <label>Route origin <input id="r-from" /></label>
+                <label>Route destination <input id="r-to" /></label>
+              </div>
+              <button id="route" type="button">Distance and ETA</button>
+              <h3>Verify a payment</h3>
+              <label>Provider reference
+                <input id="p-ref" placeholder="Paystack reference" />
+              </label>
+              <button id="verify" type="button">Verify</button>
+              <p class="muted small">
+                Verification never moves <code>payment_status</code>. A staff member
+                records that; this only checks somebody's claim.
+              </p>
+              <pre id="tool-out" class="out"></pre>
+            </div>
+
+            <div class="panel" id="status-panel">
+              <h3>Integrations</h3>
+              <div id="providers" class="chips"></div>
+              <p class="note" id="provider-note"></p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="muted small">
+      Pulse · the database is the source of truth. This page shows what it said,
+      including when it said nothing.
+    </footer>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
