@@ -37,6 +37,29 @@ leaves an empty but fully functional database. That is the intended state.
 | 0014 | enable RLS everywhere, revoke defaults, identity/business/people policies |
 | 0015 | policies for orders, assignments, notifications, payments, moving, feedback, audit |
 | 0016 | grants, realtime publication, `proofs` storage bucket and its policies |
+| 0017 | `business_kind` (carrier \| vendor), vendor phone requirement, `create_business` gains `p_kind`/`p_phone_e164` |
+| 0018 | `delivery_offers`, `offer_events`, one-pending-per-pair index, `expire_stale_offers` |
+| 0019 | `orders.originator_business_id`, offer policies, `guard_offer_transition` |
+| 0020 | `browse_carriers` (directory read), `create_delivery_offer` |
+| 0021 | `respond_to_offer` (offer → order), `withdraw_offer`, counterparty read policy |
+
+## The marketplace in one paragraph
+
+A business is a `carrier` (fulfils deliveries, employs drivers) or a `vendor`
+(originates jobs and hands them to carriers) — `0017`. A vendor browses carriers with
+`browse_carriers()` and sends one `create_delivery_offer()`; the carrier answers with
+`respond_to_offer()`. On **accept** the offer becomes an ordinary order in the
+*carrier's* business, with the vendor recorded as that carrier's customer (a carrier
+invoices the vendor that sent it the job) and `originator_business_id` linking back —
+`0019`, `0021`. That is why no second fulfilment path exists: the state machine,
+one-live-assignment, the column guards and the status history all apply unchanged.
+
+`browse_carriers()` is deliberately a `SECURITY DEFINER` function and not a policy.
+Discovery means reading businesses you do not belong to, and RLS is row-level, so any
+policy wide enough to expose a carrier row would expose every column of it. The
+function returns exactly the directory columns and nothing else. Ratings are aggregated
+live from real feedback, never denormalised, so a carrier with no completed work shows
+no rating rather than an invented one.
 
 ## Why there is no seed data
 

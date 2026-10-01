@@ -57,6 +57,14 @@ ALLOWED_RPC = {
     "record_delivery_attempt",
     "capture_proof_of_delivery",
     "set_driver_availability",
+    # Marketplace (0017-0021). browse_carriers is a directory read, not a proxy:
+    # it returns named columns only and is the sole way one business can see
+    # another. create_business now also takes p_kind / p_phone_e164.
+    "browse_carriers",
+    "create_delivery_offer",
+    "respond_to_offer",
+    "withdraw_offer",
+    "expire_stale_offers",
 }
 PATCHABLE_COLUMNS = {
     "status",
