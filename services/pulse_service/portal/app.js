@@ -34,6 +34,9 @@ const state = {
   status: null,
   poll: null,
   openOrderId: null,
+  view: "dispatch",
+  orders: [],
+  business: null,
 };
 
 const el = (id) => document.getElementById(id);
@@ -268,8 +271,15 @@ function enterWorkspace() {
   show(el("refresh"), true);
   show(el("signout"), true);
   show(el("business"), Boolean(state.businessId));
-  // Measured only now that the panel is visible — see moveTabIndicator.
-  moveTabIndicator(el("tabs").querySelector(".active"));
+  show(el("mainnav"), true);
+  state.business = state.businesses.find((b) => b.id === state.businessId) || null;
+  if (state.session && state.session.email) {
+    el("whoami").textContent = state.session.email;
+    show(el("whoami"), true);
+  }
+  // Measured only now that the nav is visible — see moveNavIndicator.
+  showView(state.view || "dispatch");
+  moveNavIndicator(el("mainnav").querySelector(".active"));
   if (!state.businessId) {
     el("board").innerHTML =
       '<div class="empty">You belong to no workspace yet. Use Team → Create workspace: ' +
@@ -284,7 +294,7 @@ function enterWorkspace() {
 }
 
 function offerWorkspaceCreation() {
-  const panel = el("tab-team");
+  const panel = el("view-team");
   if (el("create-business-box")) return;
   const box = document.createElement("div");
   box.id = "create-business-box";
@@ -485,13 +495,13 @@ async function refreshDetail(orderId, quiet) {
     detail = await api("GET", `/api/orders/${orderId}`);
   } catch (error) {
     if (!quiet) banner("bad", describe(error));
-    show(el("detail"), false);
+    closeDrawer();
     state.openOrderId = null;
     return;
   }
   state.openOrderId = orderId;
-  show(el("detail"), true);
-  el("detail-title").textContent = `${detail.order.reference} · ${detail.order.status}`;
+  openDrawer();
+  el("drawer-title").textContent = `${detail.order.reference} · ${detail.order.status}`;
   renderDetail(detail);
 }
 
@@ -502,7 +512,7 @@ function driverName(driverId) {
 }
 
 function renderDetail(detail) {
-  const body = el("detail-body");
+  const body = el("drawer-body");
   const order = detail.order;
   body.innerHTML = "";
 
@@ -672,43 +682,300 @@ function noteForm(order) {
 /* The indicator is a real element measured from the active button rather than a
  * fixed-width guess, so the bar slides correctly whatever the labels end up being
  * — including at the narrow breakpoint where they no longer fit on one row. */
-function moveTabIndicator(button) {
-  const nav = el("tabs");
-  const bar = nav && nav.querySelector(".tab-indicator");
+async function loadOrdersList(append) {
+  const box = el("orders-table");
+  const note = el("orders-note");
+  const more = el("omore");
+  if (!append) {
+    state.orders = [];
+    box.innerHTML = '<p class="muted">Loading…</p>';
+  }
+  const params = new URLSearchParams({
+    business_id: state.businessId || "",
+    limit: "25",
+    offset: String(state.orders.length),
+  });
+  const search = el("oq").value.trim();
+  if (search) params.set("q", search);
+  const status = el("ofilter").value;
+  if (status) params.set("status", status);
+  try {
+    const result = await api("GET", `/api/orders?${params.toString()}`);
+    state.orders = append ? state.orders.concat(result.orders) : result.orders;
+    renderOrdersTable();
+    note.textContent = result.note || "";
+    show(more, Boolean(result.has_more));
+  } catch (error) {
+    box.innerHTML = `<p class="muted">${describe(error)}</p>`;
+    show(more, false);
+  }
+}
+
+function renderOrdersTable() {
+  const box = el("orders-table");
+  if (!state.orders.length) {
+    box.innerHTML =
+      '<div class="empty">No orders match. That is a real answer, not a loading failure.</div>';
+    return;
+  }
+  const rows = state.orders
+    .map(
+      (order) => `<tr data-order="${order.id}" class="rowlink">
+        <td><strong>${order.reference}</strong></td>
+        <td>${order.status}</td>
+        <td>${order.customer ? order.customer.display_name || "—" : "—"}</td>
+        <td>${money(order)}</td>
+        <td>${order.payment_status || "—"}</td>
+        <td>${(order.pickup_text || "").slice(0, 34)}</td>
+        <td>${(order.destination_text || "").slice(0, 34)}</td>
+      </tr>`
+    )
+    .join("");
+  box.innerHTML = `<table><thead><tr>
+      <th>Reference</th><th>Status</th><th>Customer</th><th>Price</th>
+      <th>Payment</th><th>Pickup</th><th>Destination</th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+  for (const row of box.querySelectorAll("tr.rowlink")) {
+    row.addEventListener("click", () => openDetail(row.dataset.order));
+  }
+}
+
+async function loadDrivers() {
+  const box = el("drivers-list");
+  box.innerHTML = '<p class="muted">Loading…</p>';
+  try {
+    const result = await api(
+      "GET",
+      `/api/drivers?business_id=${encodeURIComponent(state.businessId || "")}`
+    );
+    if (!result.drivers.length) {
+      box.innerHTML =
+        '<div class="empty">No drivers yet. An invitation creates the membership; the driver row appears when they join.</div>';
+      return;
+    }
+    box.innerHTML = `<table><thead><tr>
+        <th>Driver</th><th>Status</th><th>Phone</th><th>Rating</th><th>Completed</th>
+      </tr></thead><tbody>${result.drivers
+        .map(
+          (d) => `<tr>
+            <td>${d.full_name}</td>
+            <td>${d.status}</td>
+            <td>${d.phone_e164 || "—"}</td>
+            <td>${
+              d.average_rating === null || d.average_rating === undefined
+                ? '<span class="muted">not rated</span>'
+                : Number(d.average_rating).toFixed(2)
+            }</td>
+            <td>${d.completed_order_count || 0}</td>
+          </tr>`
+        )
+        .join("")}</tbody></table>
+      <p class="note">${result.note}</p>`;
+  } catch (error) {
+    box.innerHTML = `<p class="muted">${describe(error)}</p>`;
+  }
+}
+
+async function loadMembers() {
+  const box = el("members-list");
+  box.innerHTML = '<p class="muted">Loading…</p>';
+  try {
+    const result = await api(
+      "GET",
+      `/api/businesses/${encodeURIComponent(state.businessId || "")}/members`
+    );
+    const cell = (v) => v || "—";
+    const rows = result.members.map((m) => {
+      const p = m.profile || {};
+      return `<tr><td>${cell(p.full_name || m.user_id)}</td><td>${m.role}</td>
+        <td>${cell(p.phone_e164)}</td><td>${m.is_active ? "active" : "inactive"}</td>
+        <td>${(m.joined_at || "").slice(0, 10)}</td></tr>`;
+    });
+    const pending = (result.pending_invitations || []).map(
+      (i) => `<tr><td>${i.email}</td><td>${i.role}</td><td>—</td>
+        <td>invited, expires ${(i.expires_at || "").slice(0, 10)}</td><td>—</td></tr>`
+    );
+    box.innerHTML = `<table><thead><tr><th>Person</th><th>Role</th><th>Phone</th>
+      <th>State</th><th>Joined</th></tr></thead><tbody>${rows}${pending}</tbody></table>
+      <p class="note">${result.note}</p>`;
+  } catch (error) {
+    box.innerHTML = `<p class="muted">${describe(error)}</p>`;
+  }
+}
+
+async function respondOffer(offerId, accept) {
+  try {
+    await api("POST", "/api/rpc/respond_to_offer", {
+      p_offer_id: offerId,
+      p_accept: accept,
+      p_reason: accept ? null : "declined from the portal",
+    });
+    banner(
+      accept ? "good" : "warn",
+      accept
+        ? "Accepted. It is now a real order on your dispatch board."
+        : "Declined. The vendor sees the reason you sent."
+    );
+    loadRequests();
+    loadBoard();
+  } catch (error) {
+    banner("bad", describe(error));
+  }
+}
+
+function fillProfile() {
+  const b = state.business;
+  if (!b) return;
+  el("b-name").value = b.name || "";
+  el("b-phone").value = b.phone_e164 || "";
+  el("b-city").value = b.city || "";
+  el("b-email").value = b.email || "";
+  el("b-country").value = b.country_code || "";
+  el("b-currency").value = b.currency || "";
+  el("b-areas").value = (b.service_areas || []).join(", ");
+}
+
+async function saveProfile() {
+  try {
+    const result = await api(
+      "PATCH",
+      `/api/businesses/${encodeURIComponent(state.businessId || "")}`,
+      {
+        name: el("b-name").value.trim(),
+        phone_e164: el("b-phone").value.trim() || null,
+        city: el("b-city").value.trim() || null,
+        email: el("b-email").value.trim() || null,
+        country_code: el("b-country").value.trim().toUpperCase() || "NG",
+        currency: el("b-currency").value.trim().toUpperCase() || "NGN",
+        service_areas: el("b-areas").value.split(",").map((s) => s.trim()).filter(Boolean),
+      }
+    );
+    el("b-out").textContent = JSON.stringify(result, null, 2);
+    banner("good", "Profile saved.");
+    await loadBusinesses();
+    loadBoard();
+  } catch (error) {
+    el("b-out").textContent = describe(error);
+  }
+}
+
+async function loadRequests() {
+  const box = el("requests-list");
+  const note = el("requests-note");
+  const vendor = state.business && state.business.kind === "vendor";
+  box.innerHTML = '<p class="muted">Loading…</p>';
+  try {
+    const result = await api(
+      "GET",
+      `/api/offers?business_id=${encodeURIComponent(state.businessId || "")}`
+    );
+    const mine = (result.offers || []).filter((o) =>
+      vendor ? o.vendor_business_id === state.businessId : o.carrier_business_id === state.businessId
+    );
+    note.textContent = vendor
+      ? "Offers you sent to carriers."
+      : "Offers vendors sent you. Accepting turns one into a real order.";
+    if (!mine.length) {
+      box.innerHTML = '<div class="empty">Nothing waiting.</div>';
+      return;
+    }
+    box.innerHTML = `<table><thead><tr><th>Pickup</th><th>Destination</th>
+      <th>Offer</th><th>Status</th><th>Actions</th></tr></thead><tbody>${mine
+        .map((o) => {
+          const price =
+            o.proposed_price === null || o.proposed_price === undefined
+              ? '<span class="muted">not stated</span>'
+              : `${o.currency} ${Number(o.proposed_price).toLocaleString()}`;
+          const action =
+            o.status !== "pending"
+              ? "—"
+              : vendor
+                ? `<button data-withdraw="${o.id}" class="ghost" type="button">Withdraw</button>`
+                : `<button data-accept="${o.id}" type="button">Accept</button>
+                   <button data-decline="${o.id}" class="ghost" type="button">Decline</button>`;
+          return `<tr><td>${o.pickup_text}</td><td>${o.destination_text}</td>
+            <td>${price}</td><td>${o.status}</td><td>${action}</td></tr>`;
+        })
+        .join("")}</tbody></table>`;
+    for (const b of box.querySelectorAll("[data-accept]")) {
+      b.addEventListener("click", () => respondOffer(b.dataset.accept, true));
+    }
+    for (const b of box.querySelectorAll("[data-decline]")) {
+      b.addEventListener("click", () => respondOffer(b.dataset.decline, false));
+    }
+    for (const b of box.querySelectorAll("[data-withdraw]")) {
+      b.addEventListener("click", async () => {
+        try {
+          await api("POST", "/api/rpc/withdraw_offer", { p_offer_id: b.dataset.withdraw });
+          loadRequests();
+        } catch (error) {
+          banner("bad", describe(error));
+        }
+      });
+    }
+  } catch (error) {
+    box.innerHTML = `<p class="muted">${describe(error)}</p>`;
+  }
+}
+
+function openDrawer() {
+  show(el("drawer"), true);
+  show(el("scrim"), true);
+}
+
+function closeDrawer() {
+  show(el("drawer"), false);
+  show(el("scrim"), false);
+  state.openOrderId = null;
+}
+
+function moveNavIndicator(button) {
+  const nav = el("mainnav");
+  const bar = nav && nav.querySelector(".nav-indicator");
   if (!bar || !button) return;
-  // The tab bar lives inside the workspace panel, so before that panel is shown
-  // every button measures 0px. Recording that would leave the indicator invisible
-  // until something happened to resize the window, so it is simply left alone.
+  // The bar sits above the workspace panel, so before that panel is shown every
+  // button measures 0px. Recording that would leave the indicator invisible.
   if (!button.offsetWidth) return;
   bar.style.width = `${button.offsetWidth}px`;
   bar.style.transform = `translateX(${button.offsetLeft}px)`;
 }
 
-/* Panels are toggled with display:none, which cannot be transitioned. So the panel
- * is revealed first and then given a one-shot animation class, restarted by forcing
- * a reflow. */
-function showPanel(node) {
+/* Sections are display:none when hidden, so the reveal is a one-shot animation
+   class restarted by forcing a reflow rather than a transition. */
+function reveal(node) {
   if (!node) return;
   node.classList.remove("hidden", "panel-in");
   void node.offsetWidth;
   node.classList.add("panel-in");
 }
 
-function selectTab(name) {
-  const buttons = el("tabs").querySelectorAll("button");
+/* One section owns the screen at a time. This is what de-clusters the app: the
+   board no longer shares a page with detail, forms, tools and integrations. */
+function showView(name) {
+  const buttons = el("mainnav").querySelectorAll("button");
   let active = null;
   for (const button of buttons) {
-    const on = button.dataset.tab === name;
+    const on = button.dataset.view === name;
     button.classList.toggle("active", on);
-    button.setAttribute("aria-selected", String(on));
+    button.setAttribute("aria-current", on ? "page" : "false");
     if (on) active = button;
   }
-  for (const panel of ["new", "import", "team", "tools"]) {
-    const node = el(`tab-${panel}`);
-    if (panel === name) showPanel(node);
+  for (const view of ["dispatch", "orders", "drivers", "requests", "team", "settings"]) {
+    const node = el(`view-${view}`);
+    if (view === name) reveal(node);
     else show(node, false);
   }
-  moveTabIndicator(active);
+  moveNavIndicator(active);
+  state.view = name;
+  closeDrawer();
+
+  // Each section loads its own data the first time it is opened, so the board is
+  // not waiting on drivers and members it does not need.
+  if (name === "orders") loadOrdersList(false);
+  if (name === "drivers") loadDrivers();
+  if (name === "team") loadMembers();
+  if (name === "requests") loadRequests();
+  if (name === "settings") fillProfile();
 }
 
 async function createOrder() {
@@ -782,7 +1049,7 @@ function useDraft() {
   if (draft.quoted_price && draft.quoted_price.amount) {
     el("o-price").value = draft.quoted_price.amount;
   }
-  selectTab("new");
+  showView("settings");
   // The parser has no name, and the RPC needs one: focus the only field it cannot guess.
   el("o-name").focus();
   banner(
@@ -911,37 +1178,45 @@ el("geocode").addEventListener("click", geocode);
 el("route").addEventListener("click", routeEta);
 el("verify").addEventListener("click", verifyPayment);
 
-const tabButtons = [...el("tabs").querySelectorAll("button")];
-for (const button of tabButtons) {
-  button.addEventListener("click", () => selectTab(button.dataset.tab));
+const navButtons = [...el("mainnav").querySelectorAll("button")];
+for (const button of navButtons) {
+  button.addEventListener("click", () => showView(button.dataset.view));
 }
-// Left/Right move between tabs and Home/End jump to the ends, which is what a
-// tablist is expected to do once it has been given role="tablist".
-el("tabs").addEventListener("keydown", (event) => {
-  const index = tabButtons.indexOf(document.activeElement);
+// Left/Right move between sections and Home/End jump to the ends.
+el("mainnav").addEventListener("keydown", (event) => {
+  const index = navButtons.indexOf(document.activeElement);
   if (index === -1) return;
   const step = { ArrowRight: 1, ArrowLeft: -1 };
   let next = null;
-  if (event.key in step) next = (index + step[event.key] + tabButtons.length) % tabButtons.length;
+  if (event.key in step) next = (index + step[event.key] + navButtons.length) % navButtons.length;
   else if (event.key === "Home") next = 0;
-  else if (event.key === "End") next = tabButtons.length - 1;
+  else if (event.key === "End") next = navButtons.length - 1;
   if (next === null) return;
   event.preventDefault();
-  tabButtons[next].focus();
-  selectTab(tabButtons[next].dataset.tab);
+  navButtons[next].focus();
+  showView(navButtons[next].dataset.view);
 });
-// The indicator is measured from layout, so it is placed once at start and
-// re-measured whenever the column width changes.
-selectTab("new");
+el("drawer-close").addEventListener("click", closeDrawer);
+el("scrim").addEventListener("click", closeDrawer);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeDrawer();
+});
+el("osearch").addEventListener("click", () => loadOrdersList(false));
+el("omore").addEventListener("click", () => loadOrdersList(true));
+el("create2").addEventListener("click", createOrder);
+el("b-save").addEventListener("click", saveProfile);
+
+// The indicator is measured from layout, so it is placed once the workspace is
+// visible and re-measured whenever the column width changes.
 window.addEventListener("resize", () => {
-  moveTabIndicator(el("tabs").querySelector(".active"));
+  moveNavIndicator(el("mainnav").querySelector(".active"));
 });
 
 el("business").addEventListener("change", (event) => {
   state.businessId = event.target.value;
   localStorage.setItem("pulse.business", state.businessId);
   state.openOrderId = null;
-  show(el("detail"), false);
+  closeDrawer();
   loadBoard();
 });
 

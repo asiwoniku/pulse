@@ -11,20 +11,32 @@
       <div class="brand">
         <span class="dot"></span>
         <strong>Pulse</strong>
-        <span class="muted">partner portal · dispatch</span>
+        <span class="muted">partner portal</span>
       </div>
       <div class="bar-right">
         <select id="business" class="hidden" aria-label="Workspace"></select>
-        <button id="refresh" class="ghost hidden" type="button">Refresh</button>
         <span id="sync" class="muted small"></span>
+        <span id="whoami" class="whoami hidden"></span>
         <button id="signout" class="ghost hidden" type="button">Sign out</button>
       </div>
     </header>
 
+    <!-- Primary navigation. A standard app separates "where am I" from "what is
+         happening": this bar chooses a section, and each section owns one screen. -->
+    <nav class="mainnav hidden" id="mainnav" aria-label="Sections">
+      <span class="nav-indicator" aria-hidden="true"></span>
+      <button data-view="dispatch" class="active" type="button">Dispatch</button>
+      <button data-view="orders" type="button">Orders</button>
+      <button data-view="drivers" type="button">Drivers</button>
+      <button data-view="requests" type="button">Requests</button>
+      <button data-view="team" type="button">Team</button>
+      <button data-view="settings" type="button">Settings</button>
+    </nav>
+
     <div id="banners"></div>
 
     <main>
-      <section id="auth" class="panel">
+      <section id="auth" class="panel narrow">
         <h2>Sign in</h2>
         <p class="muted">
           Same account as the mobile app. This portal has no separate user table and
@@ -43,132 +55,187 @@
       </section>
 
       <section id="workspace" class="hidden">
-        <div class="grid">
-          <div class="col">
-            <div class="panel">
-              <div class="panel-head">
-                <h2>Dispatch board</h2>
+        <!-- Dispatch does one job: the board. Everything else has its own section, so
+             nothing competes for the same screen. -->
+        <section class="view" id="view-dispatch">
+          <div class="panel">
+            <div class="toolbar">
+              <h2>Dispatch board</h2>
+              <div class="toolbar-controls">
+                <input id="q" type="search" placeholder="Search reference, customer or address" aria-label="Search orders" />
                 <select id="filter" aria-label="Filter by status">
                   <option value="">All statuses</option>
                 </select>
+                <button id="create" type="button">New order</button>
+                <button id="refresh" class="ghost" type="button">Refresh</button>
               </div>
-              <div id="counts" class="chips"></div>
-              <div id="board" class="board"></div>
             </div>
-            <div class="panel hidden" id="detail">
-              <div class="panel-head"><h2 id="detail-title">Order</h2></div>
-              <div id="detail-body"></div>
+            <div id="counts" class="chips"></div>
+            <div id="board" class="board"></div>
+          </div>
+        </section>
+
+        <!-- The board is a 50-row window of recent work. This is everything, and it
+             searches in Postgres rather than downloading the whole workspace. -->
+        <section class="view hidden" id="view-orders">
+          <div class="panel">
+            <div class="toolbar">
+              <h2>All orders</h2>
+              <div class="toolbar-controls">
+                <input id="oq" type="search" placeholder="Search everything" aria-label="Search all orders" />
+                <select id="ofilter" aria-label="Filter all orders by status">
+                  <option value="">All statuses</option>
+                </select>
+                <button id="osearch" type="button">Search</button>
+              </div>
             </div>
+            <div id="orders-table"></div>
+            <div class="row">
+              <button id="omore" class="ghost hidden" type="button">Load more</button>
+            </div>
+            <p id="orders-note" class="note"></p>
+          </div>
+        </section>
+
+        <section class="view hidden" id="view-drivers">
+          <div class="panel">
+            <div class="toolbar"><h2>Drivers</h2></div>
+            <div id="drivers-list"></div>
+          </div>
+        </section>
+<!-- The multi-operator surface: who is in this workspace, and with what
+             authority. Roles are read back from the database, never chosen locally. -->
+        <section class="view hidden" id="view-team">
+          <div class="panel">
+            <div class="toolbar"><h2>Operators</h2></div>
+            <p class="muted small">
+              Roles come from <code>business_members</code>, read back from the
+              database. A role a person picked for themselves would mean nothing.
+            </p>
+            <div id="members-list"></div>
+            <h3>Invite a worker</h3>
+            <label>Email <input id="i-email" type="email" /></label>
+            <div class="row two">
+              <label>Role
+                <select id="i-role">
+                  <option value="staff">staff</option>
+                  <option value="admin">admin</option>
+                  <option value="dispatcher">dispatcher</option>
+                  <option value="ops">ops</option>
+                  <option value="driver">driver</option>
+                </select>
+              </label>
+              <label>Display name <input id="i-name" /></label>
+            </div>
+            <label class="check">
+              <input id="i-send" type="checkbox" /> also email it (needs SMTP)
+            </label>
+            <button id="invite" type="button">Create invitation</button>
+            <pre id="invite-out" class="out"></pre>
+          </div>
+        </section>
+
+        <section class="view hidden" id="view-requests">
+          <div class="panel">
+            <div class="toolbar"><h2>Requests</h2></div>
+            <p class="muted small" id="requests-note"></p>
+            <div id="requests-list"></div>
+          </div>
+        </section>
+<!-- Settings: the company profile, plus the tools that used to share the
+             dispatch screen with the board. -->
+        <section class="view hidden" id="view-settings">
+          <div class="panel">
+            <div class="toolbar"><h2>Company profile</h2></div>
+            <p class="muted small">
+              <code>businesses_update_owner</code> decides who may edit this.
+            </p>
+            <div class="row two">
+              <label>Name <input id="b-name" /></label>
+              <label>Phone <input id="b-phone" placeholder="+234…" /></label>
+            </div>
+            <div class="row two">
+              <label>City <input id="b-city" /></label>
+              <label>Email <input id="b-email" type="email" /></label>
+            </div>
+            <div class="row two">
+              <label>Country <input id="b-country" maxlength="2" placeholder="NG" /></label>
+              <label>Currency <input id="b-currency" maxlength="3" placeholder="NGN" /></label>
+            </div>
+            <label>Service areas <input id="b-areas" placeholder="Lagos, Abuja" />
+              <span class="muted small">comma separated</span>
+            </label>
+            <button id="b-save" type="button">Save profile</button>
+            <pre id="b-out" class="out"></pre>
           </div>
 
-          <div class="col side">
-            <nav class="tabs" id="tabs" role="tablist" aria-label="Partner tools">
-              <span class="tab-indicator" aria-hidden="true"></span>
-              <button data-tab="new" class="active" type="button" role="tab" aria-selected="true">New order</button>
-              <button data-tab="import" type="button" role="tab" aria-selected="false">Import</button>
-              <button data-tab="team" type="button" role="tab" aria-selected="false">Team</button>
-              <button data-tab="tools" type="button" role="tab" aria-selected="false">Tools</button>
-            </nav>
-
-            <div class="panel" id="tab-new">
-              <h3>Create delivery order</h3>
-              <p class="muted small">
-                Calls <code>create_delivery_order()</code>. Status, reference and the
-                customer row are created by Postgres, never by this form.
-              </p>
-              <label>Customer name <input id="o-name" /></label>
-              <label>Customer phone <input id="o-phone" placeholder="+234…" /></label>
-              <label>Pickup <input id="o-pickup" /></label>
-              <label>Destination <input id="o-dest" /></label>
-              <label>Items / description
-                <textarea id="o-desc" rows="3"></textarea>
-              </label>
-              <div class="row two">
-                <label>Price <input id="o-price" type="number" min="0" step="0.01" /></label>
-                <label>Payment
-                  <select id="o-payment">
-                    <option value="">not set</option>
-                    <option value="cash">cash</option>
-                    <option value="transfer">transfer</option>
-                    <option value="card">card</option>
-                  </select>
-                </label>
-              </div>
-              <button id="create" type="button">Create order</button>
-              <p class="note" id="create-note"></p>
+          <div class="panel">
+            <h3>Create a delivery order</h3>
+            <label>Customer name <input id="o-name" /></label>
+            <label>Customer phone <input id="o-phone" placeholder="+234…" /></label>
+            <label>Pickup <input id="o-pickup" /></label>
+            <label>Destination <input id="o-dest" /></label>
+            <label>Items / description <textarea id="o-desc" rows="3"></textarea></label>
+            <div class="row two">
+              <label>Price <input id="o-price" type="number" min="0" step="0.01" /></label>
+              <label>Payment <input id="o-payment" placeholder="cash" /></label>
             </div>
-            <div class="panel hidden" id="tab-import">
-              <h3>Paste a WhatsApp order</h3>
-              <p class="muted small">
-                Parsing runs on this machine with no key. The output is a draft plus
-                the questions a human still has to ask — nothing is created until you
-                press the button and your own token is used.
-              </p>
-              <textarea id="wa-text" rows="7" placeholder="Pick up from 12 Adeola Odeku, Victoria Island and deliver to Ikoyi Links. 3 cartons and a sofa. Pay 45,000 naira. Call 08031234567"></textarea>
-              <div class="row">
-                <button id="parse" type="button">Parse into draft</button>
-                <button id="use-draft" class="ghost hidden" type="button">Use in New order</button>
-              </div>
-              <pre id="parse-out" class="out"></pre>
-            </div>
-
-            <div class="panel hidden" id="tab-team">
-              <h3>Invite a worker</h3>
-              <p class="muted small">
-                <code>invite_worker()</code> creates the code. Email is a separate,
-                optional step — if SMTP is not configured you still get the code to
-                hand over yourself.
-              </p>
-              <label>Email <input id="i-email" type="email" /></label>
-              <div class="row two">
-                <label>Role
-                  <select id="i-role">
-                    <option value="staff">staff</option>
-                    <option value="admin">admin</option>
-                    <option value="driver">driver</option>
-                  </select>
-                </label>
-                <label>Display name <input id="i-name" /></label>
-              </div>
-              <label class="check">
-                <input id="i-send" type="checkbox" /> also email it (needs SMTP)
-              </label>
-              <button id="invite" type="button">Create invitation</button>
-              <pre id="invite-out" class="out"></pre>
-            </div>
-
-            <div class="panel hidden" id="tab-tools">
-              <h3>Geocode and route</h3>
-              <label>Address
-                <input id="g-text" placeholder="12 Adeola Odeku, Victoria Island" />
-              </label>
-              <button id="geocode" type="button">Geocode</button>
-              <div class="row two">
-                <label>Route origin <input id="r-from" /></label>
-                <label>Route destination <input id="r-to" /></label>
-              </div>
-              <button id="route" type="button">Distance and ETA</button>
-              <h3>Verify a payment</h3>
-              <label>Provider reference
-                <input id="p-ref" placeholder="Paystack reference" />
-              </label>
-              <button id="verify" type="button">Verify</button>
-              <p class="muted small">
-                Verification never moves <code>payment_status</code>. A staff member
-                records that; this only checks somebody's claim.
-              </p>
-              <pre id="tool-out" class="out"></pre>
-            </div>
-
-            <div class="panel" id="status-panel">
-              <h3>Integrations</h3>
-              <div id="providers" class="chips"></div>
-              <p class="note" id="provider-note"></p>
-            </div>
+            <button id="create2" type="button">Create order</button>
+            <pre id="o-out" class="out"></pre>
           </div>
-        </div>
+
+          <div class="panel">
+            <h3>Integrations</h3>
+            <div id="providers" class="chips"></div>
+            <p class="note" id="provider-note"></p>
+          </div>
+<div class="panel">
+            <h3>WhatsApp import</h3>
+            <p class="muted small">
+              Parsing runs on this machine with no key. The output is a draft plus the
+              questions a human still has to ask — nothing is created until you press
+              the button and your own token is used.
+            </p>
+            <textarea id="wa-text" rows="6" placeholder="Pick up from 12 Adeola Odeku, Victoria Island and deliver to Ikoyi Links. 3 cartons and a sofa. Pay 45,000 naira. Call 08031234567"></textarea>
+            <div class="row">
+              <button id="parse" type="button">Parse into draft</button>
+              <button id="use-draft" class="ghost hidden" type="button">Use in New order</button>
+            </div>
+            <pre id="parse-out" class="out"></pre>
+          </div>
+
+          <div class="panel">
+            <h3>Tools</h3>
+            <label>Address <input id="g-text" placeholder="12 Adeola Odeku, Victoria Island" /></label>
+            <button id="geocode" type="button">Geocode</button>
+            <div class="row two">
+              <label>Route origin <input id="r-from" /></label>
+              <label>Route destination <input id="r-to" /></label>
+            </div>
+            <button id="route" type="button">Distance and ETA</button>
+            <h3>Verify a payment</h3>
+            <label>Provider reference <input id="p-ref" placeholder="Paystack reference" /></label>
+            <button id="verify" type="button">Verify</button>
+            <p class="muted small">
+              Verification never moves <code>payment_status</code>. A staff member
+              records that; this only checks somebody's claim.
+            </p>
+            <pre id="tool-out" class="out"></pre>
+          </div>
+        </section>
       </section>
     </main>
+
+    <!-- Order detail leaves the board column entirely and arrives as an overlay, so
+         opening an order never rearranges the dispatch list underneath it. -->
+    <aside id="drawer" class="drawer hidden" aria-label="Order detail">
+      <div class="drawer-head">
+        <h2 id="drawer-title">Order</h2>
+        <button id="drawer-close" class="ghost" type="button">Close</button>
+      </div>
+      <div id="drawer-body"></div>
+    </aside>
+    <div id="scrim" class="scrim hidden"></div>
 
     <footer class="muted small">
       Pulse · the database is the source of truth. This page shows what it said,

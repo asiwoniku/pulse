@@ -481,6 +481,169 @@ def _board(request: Request) -> tuple[int, Any]:
     }
 
 
+@route("GET /api/orders")
+def _orders_list(request: Request) -> tuple[int, Any]:
+    """Searchable, paginated order list. The board is a 50-row window of recent work;
+    this is everything, so a dispatcher can find an order from last month."""
+    token = request.need_token()
+    business_id = str(request.query.get("business_id") or "").strip()
+    if not business_id:
+        raise ServiceError("business_id is required.", source="pulse")
+
+    limit = max(1, min(int(request.query.get("limit") or 25), 100))
+    offset = max(0, int(request.query.get("offset") or 0))
+    search = str(request.query.get("q") or "").strip()
+    status = str(request.query.get("status") or "").strip()
+
+    clauses = [f"business_id=eq.{business_id}"]
+    if status:
+        clauses.append(f"status=eq.{status}")
+    query = (
+        f"select={ORDER_COLUMNS}&" + "&".join(clauses)
+        + "&order=requested_at.desc,created_at.desc"
+        # One row past the page proves whether another page exists, which is how the
+        # client knows to offer "load more" without guessing.
+        + f"&limit={limit + 1}&offset={offset}"
+    )
+    if search:
+        # Reference, description and address text are matched in Postgres so the
+        # filter runs there instead of downloading the whole workspace.
+        needle = urllib.parse.quote(f"%{search}%")
+        query += (
+            f"&or=(reference.ilike.{needle},description.ilike.{needle}"
+            f",pickup_text.ilike.{needle},destination_text.ilike.{needle})"
+        )
+
+    rows = request.db().select("orders", query, token) or []
+    has_more = len(rows) > limit
+    return 200, {
+        "orders": rows[:limit],
+        "limit": limit,
+        "offset": offset,
+        "has_more": has_more,
+        "note": "RLS filtered every read with your token.",
+    }
+
+
+@route("GET /api/businesses/{business_id}/members")
+def _members(request: Request) -> tuple[int, Any]:
+    """The operator roster. RLS already limits this to a member of the business, and
+    roles come from business_members rather than from anything the client sent."""
+    token = request.need_token()
+    business_id = request.params["business_id"]
+    members = request.db().select(
+        "business_members",
+        f"select=id,business_id,user_id,role,is_active,joined_at"
+        f"&business_id=eq.{business_id}&order=joined_at.asc&limit=200",
+        token,
+    ) or []
+    ids = [str(row.get("user_id")) for row in members if row.get("user_id")]
+    profiles: dict[str, Any] = {}
+    if ids:
+        found = request.db().select(
+            "profiles",
+            f"select=id,full_name,phone_e164,avatar_url&id={_in_filter(ids)}",
+            token,
+        ) or []
+        profiles = {str(row.get("id")): row for row in found}
+    invitations = request.db().select(
+        "business_invitations",
+        f"select=id,email,role,status,expires_at"
+        f"&business_id=eq.{business_id}&status=eq.pending&order=created_at.desc",
+        token,
+    ) or []
+    return 200, {
+        "members": [
+            {**row, "profile": profiles.get(str(row.get("user_id")))} for row in members
+        ],
+        "pending_invitations": invitations,
+        "note": "Roles are read back from business_members; the database decides.",
+    }
+
+
+@route("PATCH /api/businesses/{business_id}")
+def _patch_business(request: Request) -> tuple[int, Any]:
+    """Company profile edit. Only the columns a business may set about itself; kind,
+    role and membership are structural and cannot be changed from here."""
+    token = request.need_token()
+    business_id = request.params["business_id"]
+    editable = {
+        "name", "phone_e164", "email", "city", "country_code",
+        "timezone", "currency", "service_areas", "is_active",
+    }
+    payload = {key: value for key, value in request.body.items() if key in editable}
+    dropped = sorted(set(request.body) - set(payload))
+    if not payload:
+        raise ServiceError(
+            "Nothing to update.", source="pulse", detail={"editable": sorted(editable)}
+        )
+    if "name" in payload and len(str(payload["name"]).strip()) < 2:
+        raise ServiceError("A business name of at least 2 characters is required.", source="pulse")
+    if "service_areas" in payload and not isinstance(payload["service_areas"], list):
+        raise ServiceError("service_areas must be a list of text.", source="pulse")
+
+    rows = request.db().patch_row("businesses", f"id=eq.{business_id}", payload, token)
+    return 200, {
+        "businesses": rows,
+        "ignored_columns": dropped,
+        "note": "businesses_update_owner (0014) decided whether this was allowed.",
+    }
+
+
+@route("GET /api/drivers")
+def _drivers_list(request: Request) -> tuple[int, Any]:
+    token = request.need_token()
+    business_id = str(request.query.get("business_id") or "").strip()
+    if not business_id:
+        raise ServiceError("business_id is required.", source="pulse")
+    rows = request.db().select(
+        "drivers",
+        f"select=id,full_name,phone_e164,status,vehicle_type,home_base,service_areas,"
+        f"average_rating,completed_order_count,is_active,created_at"
+        f"&business_id=eq.{business_id}&order=full_name.asc&limit=200",
+        token,
+    ) or []
+    return 200, {
+        "drivers": rows,
+        "note": "Ratings stay NULL until real feedback exists; that is shown, not hidden.",
+    }
+
+
+@route("GET /api/carriers")
+def _carriers(request: Request) -> tuple[int, Any]:
+    """Carrier directory for vendors. Runs entirely inside Postgres via
+    browse_carriers(), which returns directory columns only, so no policy is widened
+    and no private column of another business becomes reachable."""
+    token = request.need_token()
+    payload = {
+        key: request.query.get(key) or None
+        for key in ("p_search", "p_city", "p_service_area", "p_min_rating")
+    }
+    return 200, {
+        "carriers": request.db().rpc("browse_carriers", payload, token) or [],
+        "note": "Ratings are live aggregates of real feedback; no rating means no history yet.",
+    }
+
+
+@route("GET /api/offers")
+def _offers(request: Request) -> tuple[int, Any]:
+    """Offers sent or received by the given workspace, determined by membership."""
+    token = request.need_token()
+    business_id = str(request.query.get("business_id") or "").strip()
+    if not business_id:
+        raise ServiceError("business_id is required.", source="pulse")
+    rows = request.db().select(
+        "delivery_offers",
+        f"select=id,vendor_business_id,carrier_business_id,status,pickup_text,"
+        f"destination_text,description,service_type,proposed_price,currency,"
+        f"scheduled_at,order_id,decline_reason,expires_at,created_at"
+        f"&or=(vendor_business_id.eq.{business_id},carrier_business_id.eq.{business_id})"
+        f"&order=created_at.desc&limit=100",
+        token,
+    ) or []
+    return 200, {"offers": rows, "note": "Only the two parties to an offer can see it."}
+
+
 @route("GET /api/orders/{order_id}")
 def _order_detail(request: Request) -> tuple[int, Any]:
     token = request.need_token()
