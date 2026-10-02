@@ -277,9 +277,9 @@ function enterWorkspace() {
     el("whoami").textContent = state.session.email;
     show(el("whoami"), true);
   }
-  // Measured only now that the nav is visible — see moveNavIndicator.
+  applyNavPermissions();
   showView(state.view || "dispatch");
-  moveNavIndicator(el("mainnav").querySelector(".active"));
+  moveNavIndicator(el("mainnav").querySelector(".active:not(.hidden)"));
   if (!state.businessId) {
     el("board").innerHTML =
       '<div class="empty">You belong to no workspace yet. Use Team → Create workspace: ' +
@@ -915,6 +915,42 @@ async function loadRequests() {
     }
   } catch (error) {
     box.innerHTML = `<p class="muted">${describe(error)}</p>`;
+  }
+}
+
+/* Sections the caller's role or workspace kind cannot use are removed from the bar
+ * rather than left to fail on click. The server refuses them either way -- this is
+ * about not offering an action that cannot work.
+ *
+ * A driver acts through assignments and never on the workspace, so a driver gets
+ * only Dispatch. A vendor originates jobs, so it has no drivers of its own and no
+ * dispatch board; its board is Requests plus the orders it forwarded. */
+function applyNavPermissions() {
+  const role = (state.business && state.business.my_role) || "";
+  const kind = (state.business && state.business.kind) || "carrier";
+  const nav = el("mainnav");
+  const hidden = new Set();
+  if (role === "driver") {
+    for (const view of ["orders", "drivers", "requests", "team", "settings"]) hidden.add(view);
+  }
+  if (kind === "vendor") {
+    hidden.add("drivers");
+    hidden.add("dispatch");
+  }
+  for (const button of nav.querySelectorAll("button")) {
+    const hide = hidden.has(button.dataset.view);
+    button.classList.toggle("hidden", hide);
+    if (hide && button.classList.contains("active")) {
+      button.classList.remove("active");
+    }
+  }
+  // Never leave the user on a section that is no longer offered.
+  if (nav.querySelector(".active:not(.hidden)")) {
+    if (state.view && hidden.has(state.view)) showView("requests");
+    moveNavIndicator(nav.querySelector(".active:not(.hidden)"));
+  } else {
+    const first = nav.querySelector("button:not(.hidden)");
+    if (first) showView(first.dataset.view);
   }
 }
 

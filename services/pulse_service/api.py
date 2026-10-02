@@ -338,7 +338,8 @@ def _businesses(request: Request) -> tuple[int, Any]:
         }
     rows = db.select(
         "businesses",
-        f"select=id,name,phone_e164,city,country_code,timezone,currency,is_active"
+        f"select=id,name,phone_e164,email,city,country_code,timezone,currency,"
+        f"service_areas,kind,is_active"
         f"&id={_in_filter(ids)}&order=name.asc",
         token,
     )
