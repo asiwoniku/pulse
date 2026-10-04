@@ -1,129 +1,177 @@
 # Deployment
 
-How Pulse is deployed, and what a person has to supply before a deploy can succeed.
+How Pulse is deployed, and what a person must supply before a deploy can succeed.
 
 ## Topology: one origin, deliberately
 
 ```
-                     https://staging.pulse…  (one host, TLS at the edge)
-                     ┌────────────────────────────────────────┐
-  browser ─────────▶│  /            built partner-web (SPA)  │
-                     │  /api/*       pulse_service JSON API   │
-                     └───────────────────────┬────────────────┘
-                                             │ caller's own bearer token
-                                  ┌──────────▼──────────┐
-                                  │  Supabase (PostgREST, Auth) │
-                                  │  Postgres + RLS owns the rules │
-                                  └─────────────────────────────┘
+            https://pulse-…vercel.app        (one domain, TLS at the edge)
+            ┌──────────────────────────────────────────────┐
+ browser ──▶│  /        partner-web, Vite SPA (static CDN)  │
+            │  /api/*   pulse_service WSGI function         │
+            └───────────────────────┬──────────────────────┘
+                                    │ caller's own bearer token
+                         ┌──────────▼──────────────────────┐
+                         │  Supabase  jqzsylkegjawhvlqaizj  │
+                         │  PostgREST · Auth · Realtime     │
+                         │  Postgres + RLS owns the rules  │
+                         └─────────────────────────────────┘
 ```
 
 `partner-web` calls **relative** `/api/...` paths (`partner-web/src/lib/api.ts`) and
 routes with `BrowserRouter`. That is a decision, not an accident: `vite.config.ts`
 proxies `/api` in development "so the browser never needs to know the service's host
-and CORS stays same-origin … exactly as it is behind one reverse proxy later." So in
-production the client and the API live on one host, and there is no `VITE_API_BASE`,
-no CORS configuration, and nothing to re-point per environment.
+and CORS stays same-origin … exactly as it is behind one reverse proxy later." So both
+halves live on one domain, and there is no `VITE_API_BASE`, no CORS configuration, and
+nothing to re-point per environment.
 
 Postgres still decides everything. Per `docs/adr/0002-supabase-first.md`, the server
 owns transport only — it forwards the caller's token so RLS applies — and stays
 deletable without changing behaviour.
 
-## The image
+## Deploying to Vercel
 
-`Dockerfile` at the repository root builds both halves into one image: Node builds
-the client, `python:3.12-slim` runs it. There is **no `pip install` step** because
-`pulse_service` is standard-library only; that property is preserved on purpose.
+`vercel.json` at the repository root uses Vercel **Services**, which is built for
+exactly this shape: "a JavaScript frontend and a Python backend in the same repository
+that you want to deploy as one project."
+
+```json
+{
+  "services": {
+    "web": { "root": "partner-web/" },
+    "api": { "root": "services/", "entrypoint": "wsgi:application" }
+  },
+  "rewrites": [
+    { "source": "/api/:path*", "destination": { "service": "api" } },
+    { "source": "/:path*",      "destination": { "service": "web" } }
+  ]
+}
+```
+
+Three details that matter:
+
+- **Rewrite order is significant.** Vercel evaluates top-level rewrites in order and
+  routes to the first match, so `/api/:path*` must precede the catch-all or the API
+  would be swallowed by the SPA.
+- **The service receives the original request path.** `/api/users` arrives as
+  `PATH_INFO=/api/users`, not `/users`, so the existing routing in
+  `pulse_service.app.application` works with no adapter and no path rewriting.
+- **`entrypoint` is `file:variable`.** `services/wsgi.py` re-exports the same
+  `application` object `python run.py` serves. `serve()` is never called: a serverless
+  host invokes the WSGI callable once per request, so `wsgiref`'s socket and threading
+  model are not involved.
+
+There is no `requirements.txt`, because `pulse_service` is standard-library only and
+that property is worth keeping. `services/.python-version` pins `3.12`.
+
+```bash
+cd pulse
+vercel link                       # or: vercel --prod
+vercel env add SUPABASE_URL SUPABASE_ANON_KEY
+vercel deploy --prod
+```
+
+Use `vercel dev` to run both services locally exactly as production routes them.
+
+## The container image (alternative)
+
+`Dockerfile` at the repository root builds both halves into one image: Node builds the
+client, `python:3.12-slim` runs it. This is not what Vercel uses — Vercel builds each
+service itself — but it is how the same topology runs on Fly.io, Render, Railway,
+Cloud Run or a plain VM, and it is the fastest way to reproduce production locally.
 
 ```bash
 docker build -t pulse .
 docker run --rm -p 8000:8000 \
   -e PULSE_HOST=0.0.0.0 -e PORT=8000 \
-  -e SUPABASE_URL=https://<project-ref>.supabase.co \
-  -e SUPABASE_ANON_KEY=<publishable key> \
+  -e SUPABASE_URL=https://jqzsylkegjawhvlqaizj.supabase.co \
+  -e SUPABASE_ANON_KEY=sb_publishable_… \
   pulse
 ```
 
-Then open <http://127.0.0.1:8000/>.
-
-`.dockerignore` is load-bearing, not cosmetic: the Dockerfile copies the whole
-`services/` tree, and a developer's `services/.env` holds
+Then open <http://127.0.0.1:8000/>. `.dockerignore` is load-bearing, not cosmetic: the
+Dockerfile copies the whole `services/` tree, and a developer's `services/.env` holds
 `SUPABASE_SERVICE_ROLE_KEY`. Without that file, `docker push` publishes the key.
 
 ### Environment variables
 
-`PULSE_WEB_ROOT` is set to `/srv/web` in the image, which is what puts the React
-client at `/`. Unset, the service serves the older dispatcher portal from
-`pulse_service/portal/` — that is the local `python run.py` behaviour, unchanged.
-
 | Variable | Required | Notes |
 |---|---|---|
-| `SUPABASE_URL` | yes | `https://<project-ref>.supabase.co` |
+| `SUPABASE_URL` | yes | `https://jqzsylkegjawhvlqaizj.supabase.co` |
+| `SUPABASE_ANON_KEY` | yes | the **publishable** key (`sb_publishable_…`) |
+| `SUPABASE_SERVICE_ROLE_KEY` | no | admin tasks only; never forwarded on portal requests |
+| `PULSE_HOST` | in Docker | must be `0.0.0.0`; the `127.0.0.1` default binds loopback inside the container and answers connection-refused to everything outside |
+| `PORT` | in Docker | set by Fly/Render/Railway/Cloud Run; `PULSE_PORT` still works locally |
+| `PULSE_WEB_ROOT` | no | Docker sets it to `/srv/web` to put the React client at `/`. **Leave it unset on Vercel**: there the CDN serves the client and the function only ever receives `/api/*`. Unset, the service serves the older dispatcher portal from `pulse_service/portal/`, which is the local `python run.py` behaviour |
+| `MAPS_*`, `PAYSTACK_*`, `FLUTTERWAVE_*`, `WHATSAPP_*`, `FCM_*`, `SMTP_*` | no | each stays in its honest "not configured" state until set |
+
+An unconfigured provider is not an error. `/api/status` reports which ones are live,
+and the UI renders what is missing instead of inventing data.
+
 ## What you need to provide
 
-### 1. A hosting target (not yet chosen)
+### 1. Vercel environment variables
 
-Nothing in the repo names a platform. The `Dockerfile` is portable, so any of these
-works without code changes:
+Two, and only two are required. Set them per environment in the dashboard or with
+`vercel env add`:
 
-| Platform | Notes |
+| Key | Value |
 |---|---|
-| Fly.io | `fly launch`; the free allowance covers one small service |
-| Render | free web service; the static-site option is unnecessary here |
-| Railway | simplest environment-variable UI |
-| Cloud Run | needs its own CORS/origin treatment for browser calls |
+| `SUPABASE_URL` | `https://jqzsylkegjawhvlqaizj.supabase.co` |
+| `SUPABASE_ANON_KEY` | the publishable key `sb_publishable_hx7_k2pa5FUS4-aCyG7Mdg_CsHEWcpm` |
 
-Tell me which, and I will add the matching `fly.toml` / `render.yaml`.
+The publishable key is safe in a server environment variable, and it is the only
+credential this deployment needs: the service forwards the caller's own bearer token so
+RLS decides access. **`SUPABASE_SERVICE_ROLE_KEY` is not needed** and should not be set
+here — it bypasses RLS, and the portal never uses it (see `services/.env.example`).
 
-Also worth deciding: whether the platform terminates TLS in front of this, or whether
-it exposes the Python process directly. See the warning below.
+Optional provider keys (`MAPS_*`, `PAYSTACK_SECRET_KEY`, `WHATSAPP_*`, `FCM_*`,
+`SMTP_*`) can be added later; each has a real "not configured" state meanwhile.
 
-### 2. Supabase environments — **currently blocked**
-
-Creating `pulse-staging` and `pulse-production` failed:
-
-> The following organization members have reached their maximum limits for the
-> number of active free projects … (2 project limit). To continue, these users will
-> need to either delete, pause or upgrade one or more of these projects.
-
-Org **Das** is on the `free` plan, whose cap is 2 active projects, and both are used:
-`Pulse` (`jqzsylkegjawhvlqaizj`, the current dev database) and `Literally`
-(`fsdllpodfshugwebekiy`, unrelated). Options, in the order I would pick them:
-
-1. **Pause `Literally`** → frees one slot for `pulse-staging`. `pause_project` keeps
-   all data and `restore_project` reverses it, so this is reversible.
-2. **Upgrade the org to Pro** → more project slots, keeping dev, staging and
-   production at once. The only option that yields all three environments.
-3. **Promote the existing `Pulse` project to production** and add only staging.
-   Convenient, but the dev database then holds whatever production sees, which the
-   "no fabricated work in live workspaces" rule argues against.
-4. **A Supabase branch as staging** — `$0.01344/hr` (~$9.76/mo), created from the
-   current project with migrations applied automatically. Cheaper than a project, but
-   Supabase positions branches as development rather than production, so this only
-   makes sense for staging.
-
-Whichever you choose, each environment needs migrations `0001`–`0024` applied in
-order (`supabase link --project-ref <ref> && supabase db push`) and then the
-verification queries in `supabase/README.md`. I can apply those for you once a slot
-exists.
-
-### 3. Per-environment auth settings
+### 2. Supabase auth settings
 
 These live in the dashboard and **cannot** be set from SQL or `.env`:
-## A warning about running this process directly
 
-`run.py` serves through `wsgiref`, the standard library's development server. It is
-**not hardened or benchmarked for hostile internet traffic** — it exists so the portal
-runs on a bare machine with nothing installed. Deploying it behind a TLS-terminating
-platform edge or a reverse proxy is fine. Exposing the container's port directly to
-the public internet is not.
+- **Site URL** — `https://<your-vercel-domain>/`
+- **Redirect URLs** — the same origin, plus any OAuth callback origins you add
+- **Confirm email** — leave it *on* and configure SMTP, or new accounts are created but
+  can never sign in, and the service answers `needs_confirmation: true`
+- **SMTP** — `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `MAIL_FROM` if
+  invitations should be delivered rather than shown on screen
 
-The `application` object is a plain WSGI callable, so putting gunicorn or uWSGI in
-front is a one-line change if you want a hardened server without touching a single
-handler. Per ADR-002 it stays transport-only either way.
+### 3. Migrations
+
+The database already has `0001`–`0024` applied (verified against the live project). If
+you ever reset it:
+
+```bash
+supabase link --project-ref jqzsylkegjawhvlqaizj
+supabase db push
+```
+
+then run the verification queries in `supabase/README.md`.
+
+## Caveats worth knowing
+
+- **One Supabase project serves both dev and production.** The free plan caps the
+  organisation at 2 active projects and both are used (`Pulse` and `Literally`), so
+  there is no separate staging database today. Vercel Preview deployments will share
+  the same Supabase project — useful for UI review, but a Preview that writes rows
+  writes them to the same database production reads. Point previews at a branch
+  (`~$0.0134/hr`) if that matters.
+- **Vercel Services is Beta** on all plans. The configuration follows the documented
+  shape, but beta surfaces do change.
+- **Cold starts.** The API is a function, so the first request after an idle period
+  pays an initialisation cost. The board polls, so this is visible in practice; Fluid
+  compute (the default for Services) keeps a warm instance available.
+- **`wsgiref` is not exposed on Vercel.** The dev server is never bound to a socket
+  there, only the WSGI callable is invoked. When running the container on a plain VM
+  instead, put gunicorn or uWSGI in front before exposing it — `application` is a plain
+  WSGI callable, so that is a one-line change.
 
 ## Verified
 
-Checked by driving the real WSGI callable, not by inspection:
+Driving the real WSGI callable, not by inspection:
 
 | Request | Result |
 |---|---|
@@ -136,26 +184,10 @@ Checked by driving the real WSGI callable, not by inspection:
 | `GET /../../etc/passwd` | 200 `index.html`, nothing read off disk |
 | `PULSE_WEB_ROOT` unset, `GET /` | dispatcher portal, as before |
 
-`npm run build` (`tsc -b && vite build`) is clean and all 19 service tests pass.
+`services/wsgi.py` resolves to `pulse_service.app.application` with signature
+`(environ, start_response)` — the entrypoint Vercel loads, checked by importing it the
+way the runtime would. `npm run build` (`tsc -b && vite build`) is clean and all 19
+service tests pass.
 
-- **Site URL** — `https://<your-host>/`
-- **Redirect URLs** — the same origin, plus any OAuth callback origins you add
-- **Confirm email** — leave it *on* and configure SMTP, or new accounts are created
-  but can never sign in, and the service answers `needs_confirmation: true`
-- **SMTP** — `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `MAIL_FROM`
-  if invitations should be delivered rather than shown on screen
-
-### 4. Optional provider credentials
-
-Payments (Paystack/Flutterwave), the WhatsApp Cloud API, FCM, and a maps key
-(Google or Mapbox — the `nominatim` and `osrm` defaults are explicitly marked
-unacceptable in production). Each is optional and each has a real unconfigured state.
-| `SUPABASE_ANON_KEY` | yes | the **publishable** key only |
-| `SUPABASE_SERVICE_ROLE_KEY` | no | admin tasks only; never forwarded on portal requests |
-| `PULSE_HOST` | in Docker | must be `0.0.0.0`; the `127.0.0.1` default answers connection-refused from outside the container and looks like a broken deploy |
-| `PORT` | in Docker | set by Fly/Render/Railway/Cloud Run; `PULSE_PORT` still works locally |
-| `PULSE_WEB_ROOT` | no | where the built client lives; unset serves the dispatcher portal |
-| `MAPS_*`, `PAYSTACK_*`, `FLUTTERWAVE_*`, `WHATSAPP_*`, `FCM_*`, `SMTP_*` | no | each stays in its honest "not configured" state until set |
-
-An unconfigured provider is not an error. `/api/status` reports which ones are live,
-and the UI renders what is missing instead of inventing data.
+Not yet verified: an actual `vercel deploy`. The routing rules are taken from Vercel's
+documented behaviour, but the first real deploy is what will confirm them.
