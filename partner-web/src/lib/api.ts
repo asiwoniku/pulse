@@ -151,6 +151,34 @@ export interface Workspace {
   note?: string
 }
 
+export interface Member {
+  id: string
+  user_id: string
+  role: string
+  is_active: boolean
+  joined_at: string
+  profile?: {
+    id?: string
+    full_name?: string | null
+    phone_e164?: string | null
+    avatar_url?: string | null
+  } | null
+}
+
+export interface Invitation {
+  id: string
+  email: string
+  role: string
+  status: string
+  expires_at: string
+}
+
+export interface MembersResponse {
+  members: Member[]
+  pending_invitations: Invitation[]
+  note?: string
+}
+
 export const workspace = {
   list: () => get<Workspace>('/api/businesses'),
   create: (input: {
@@ -161,10 +189,16 @@ export const workspace = {
     p_kind?: string
     p_phone_e164?: string
   }) => post<Record<string, unknown>>('/api/rpc/create_business', input),
+  /** Company profile edit. The service restricts this to the columns a business
+   * may set about itself and to what businesses_update_owner allows. */
+  patchBusiness: (
+    businessId: string,
+    input: Partial<Pick<Business, 'name' | 'phone_e164' | 'email' | 'city' | 'country_code' | 'currency' | 'is_active'>> & {
+      service_areas?: string[]
+    },
+  ) => patch<Record<string, unknown>>(`/api/businesses/${encodeURIComponent(businessId)}`, input),
   members: (businessId: string) =>
-    get<{ members: Record<string, unknown>[] }>(
-      `/api/businesses/${encodeURIComponent(businessId)}/members`,
-    ),
+    get<MembersResponse>(`/api/businesses/${encodeURIComponent(businessId)}/members`),
   invite: (input: {
     p_business_id: string
     p_email: string
@@ -198,6 +232,32 @@ export interface MovingRequest {
   items: Record<string, unknown>[]
 }
 
+/** Shapes for the workspace record endpoints. Typed rather than
+ * Record<string, unknown> so a missing or renamed column is a compile error here
+ * instead of an "unknown" leaking into a rendered page. */
+export interface PaymentAttempt {
+  id: string
+  order_id: string
+  /** The service joins the order for display; null when RLS hides it. */
+  order?: { id?: string; reference?: string } | null
+  provider: string
+  amount: number | string
+  currency: string
+  status: string
+  created_at: string
+  confirmed_at: string | null
+}
+
+export interface FeedbackRecord {
+  id: string
+  order_id: string
+  driver_id: string | null
+  order?: { id?: string; reference?: string } | null
+  rating: number
+  comment: string | null
+  created_at: string
+}
+
 export const workspaceRecords = {
   moving: (businessId: string) =>
     get<{ moving_requests: MovingRequest[]; has_more: boolean; note?: string }>(
@@ -212,7 +272,7 @@ export const workspaceRecords = {
   }) =>
     post<{ moving_request: MovingRequest }>('/api/moving-requests', input),
   payments: (businessId: string) =>
-    get<{ payment_attempts: Record<string, unknown>[]; has_more: boolean; note?: string }>(
+    get<{ payment_attempts: PaymentAttempt[]; has_more: boolean; note?: string }>(
       `/api/payment-attempts?business_id=${encodeURIComponent(businessId)}`,
     ),
   notifications: (businessId: string) =>
@@ -224,7 +284,7 @@ export const workspaceRecords = {
       `/api/audit-logs?business_id=${encodeURIComponent(businessId)}`,
     ),
   feedback: (businessId: string) =>
-    get<{ feedback: Record<string, unknown>[]; has_more: boolean; note?: string }>(
+    get<{ feedback: FeedbackRecord[]; has_more: boolean; note?: string }>(
       `/api/order-feedback?business_id=${encodeURIComponent(businessId)}`,
     ),
   documents: (businessId: string) =>
@@ -234,6 +294,8 @@ export const workspaceRecords = {
       has_more: boolean
       note?: string
     }>(`/api/documents?business_id=${encodeURIComponent(businessId)}`),
+  /** Kept here as well as on `workspace`: SettingsPage edits the company
+   * profile, and both call sites hit the same restricted endpoint. */
   patchBusiness: (businessId: string, input: Record<string, unknown>) =>
     patch<{ businesses: Record<string, unknown>[]; ignored_columns: string[]; note: string }>(
       `/api/businesses/${encodeURIComponent(businessId)}`,

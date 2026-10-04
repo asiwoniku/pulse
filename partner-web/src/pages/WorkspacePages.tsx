@@ -185,13 +185,19 @@ export function PaymentsPage() {
   const id = activeBusiness?.id ?? null
   const query = useQuery(id ? () => workspaceRecords.payments(id) : null, [id])
   const rows = query.data?.payment_attempts ?? []
-  const totals = useMemo(() => rows.reduce((sum, row) => {
-    if (row.status === 'paid') {
-      const currency = String(row.currency ?? '')
-      sum[currency] = (sum[currency] ?? 0) + Number(row.amount ?? 0)
-    }
-    return sum
-  }, {} as Record<string, number>), [rows])
+  // The accumulator is typed explicitly. Inferred from the `{}` seed it widens to
+  // `{}`, and `map[status] + 1` then fails because `{}` has no `+`.
+  const totals = useMemo(
+    () =>
+      rows.reduce<Record<string, number>>((sum, row) => {
+        if (row.status === 'paid') {
+          const currency = String(row.currency ?? '')
+          sum[currency] = (sum[currency] ?? 0) + Number(row.amount ?? 0)
+        }
+        return sum
+      }, {}),
+    [rows],
+  )
   return (
     <>
       <PageHeader eyebrow={activeBusiness?.name ?? 'Workspace'} title="Payments" description="Payment attempts actually recorded for orders. No provider connection or payout ledger is configured." />
@@ -235,11 +241,15 @@ export function ReportsPage() {
   const id = activeBusiness?.id ?? null
   const query = useQuery(id ? () => operations.board(id) : null, [id])
   const rows = query.data?.orders ?? []
-  const statuses = useMemo(() => rows.reduce((map, row) => {
-    const status = String(row.status ?? 'unknown')
-    map[status] = (map[status] ?? 0) + 1
-    return map
-  }, {} as Record<string, number>), [rows])
+  const statuses = useMemo(
+    () =>
+      rows.reduce<Record<string, number>>((map, row) => {
+        const status = String(row.status ?? 'unknown')
+        map[status] = (map[status] ?? 0) + 1
+        return map
+      }, {}),
+    [rows],
+  )
   const collected = rows.filter((row) => ['delivered', 'completed'].includes(String(row.status)))
   const onExport = () => downloadCsv('pulse-recent-orders.csv', rows)
   return (
@@ -277,7 +287,9 @@ export function TeamPage() {
     }
   }
   const members = query.data?.members ?? []
-  const invitations = (query.data?.pending_invitations ?? []) as Record<string, unknown>[]
+  // Already typed as Invitation[] by the client, so no cast is needed — and a
+  // cast to Record<string, unknown>[] here would erase the fields below.
+  const invitations = query.data?.pending_invitations ?? []
   return (
     <>
       <PageHeader eyebrow={activeBusiness?.name ?? 'Workspace'} title="Team & permissions" description="Workspace membership is enforced by database roles and row-level security." />
