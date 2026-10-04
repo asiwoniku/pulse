@@ -48,6 +48,8 @@ export const NAV: NavGroup[] = [
     label: 'Relationships',
     items: [
       { to: '/app/customers', label: 'Customers' },
+      { to: '/app/carriers', label: 'Carriers' },
+      { to: '/app/offers', label: 'Offers' },
       { to: '/app/reputation', label: 'Reviews & reputation' },
     ],
   },
@@ -70,6 +72,7 @@ export const NAV: NavGroup[] = [
     items: [
       { to: '/app/integrations', label: 'Integrations & API' },
       { to: '/app/team', label: 'Team & permissions' },
+      { to: '/app/join', label: 'Join a workspace' },
       { to: '/app/company/verification', label: 'Company verification' },
       { to: '/app/settings', label: 'Settings' },
       { to: '/app/help', label: 'Help & support' },

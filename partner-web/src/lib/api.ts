@@ -56,6 +56,17 @@ export function clearSession(): void {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const method = (init.method ?? 'GET').toUpperCase()
+
+  // Demo mode intercepts reads only. A write is refused outright rather than sent
+  // or faked, so nothing in a demo session can touch the real database and no click
+  // can look like it saved something.
+  if (isDemoMode() && method !== 'GET') demoWriteRefusal()
+  if (isDemoMode() && method === 'GET') {
+    const fixture = demoFetch(path)
+    if (fixture !== null) return fixture as T
+  }
+
   const session = loadSession()
   const headers = new Headers(init.headers)
   headers.set('Content-Type', 'application/json')
@@ -108,6 +119,154 @@ export const post = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: 'POST', body: JSON.stringify(body ?? {}) })
 export const patch = <T>(path: string, body: unknown) =>
   request<T>(path, { method: 'PATCH', body: JSON.stringify(body) })
+
+import { demo } from './demoData'
+export { demo } from './demoData'
+
+const DEMO_KEY = 'pulse.demo'
+
+/**
+ * Demo mode is off unless a person turns it on, and the choice is remembered per
+ * browser. Nothing enables it implicitly — there is no query string or environment
+ * that could switch it on by accident during a real session.
+ */
+export function isDemoMode(): boolean {
+  try {
+    return window.localStorage.getItem(DEMO_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+export function setDemoMode(on: boolean): void {
+  try {
+    if (on) window.localStorage.setItem(DEMO_KEY, '1')
+    else window.localStorage.removeItem(DEMO_KEY)
+  } catch {
+    /* Private browsing with storage disabled: simply not available. */
+  }
+}
+
+export const DEMO_MESSAGE =
+  'Demo mode is on. Every record below is fictional and exists only in this browser — nothing was read from or written to the database.'
+
+/** Writes are refused rather than faked, so a click cannot look like a success. */
+export function demoWriteRefusal(): never {
+  throw new ApiError(
+    0,
+    'Demo mode is on, so nothing can be saved. Turn it off to write real records.',
+    'demo',
+    null,
+  )
+}
+
+/**
+ * Answers a GET from the fixtures when demo mode is on, and returns null otherwise
+ * so the caller falls through to the real service. Only GETs are ever intercepted:
+ * a write reaching this function is a bug, so it is refused rather than guessed at.
+ */
+export function demoFetch(path: string): unknown | null {
+  if (!isDemoMode()) return null
+  if (!path.startsWith('/api/')) return null
+
+  const url = new URL(path, window.location.origin)
+  const route = url.pathname
+  const businessId = url.searchParams.get('business_id')
+
+  const page = { limit: 25, offset: 0, has_more: false }
+
+  switch (route) {
+    case '/api/businesses':
+      return { businesses: [demo.business], note: DEMO_MESSAGE }
+
+    case '/api/board':
+      return {
+        business_id: businessId ?? demo.business.id,
+        orders: demo.orders(),
+        counts: {},
+        limit: 50,
+        truncated: false,
+        transition_source: 'demo fixtures (migration 0006 edges)',
+        drivers_available: demo.availableDrivers(),
+        note: DEMO_MESSAGE,
+      }
+
+    case '/api/orders':
+      return { ...page, orders: demo.orders(), note: DEMO_MESSAGE }
+
+    case '/api/drivers':
+      return { drivers: demo.drivers(), note: DEMO_MESSAGE }
+
+    case '/api/customers':
+      return { customers: demo.customers(), note: DEMO_MESSAGE }
+
+    case '/api/vehicles':
+      return { vehicles: demo.vehicles(), note: DEMO_MESSAGE }
+
+    case '/api/carriers':
+      return { carriers: demo.carriers(), note: DEMO_MESSAGE }
+
+    case '/api/offers':
+      return { offers: demo.offers(), note: DEMO_MESSAGE }
+
+    case '/api/shipments':
+      return { ...page, shipments: demo.shipments(), note: DEMO_MESSAGE }
+
+    case '/api/moving-requests':
+      return { moving_requests: [], has_more: false, note: DEMO_MESSAGE }
+
+    case '/api/payment-attempts':
+      return { payment_attempts: [], has_more: false, note: DEMO_MESSAGE }
+
+    case '/api/notifications':
+      return { notifications: [], note: DEMO_MESSAGE }
+
+    case '/api/audit-logs':
+      return { audit_logs: [], note: DEMO_MESSAGE }
+
+    case '/api/order-feedback':
+      return { feedback: [], has_more: false, note: DEMO_MESSAGE }
+
+    case '/api/documents':
+      return { documents: [], shipments_scanned: demo.shipments().length, has_more: false, note: DEMO_MESSAGE }
+
+    case '/api/status':
+      return {
+        service: 'pulse-demo',
+        supabase_configured: false,
+        supabase_url_present: false,
+        using_service_role: false,
+        providers: [
+          { key: 'demo', title: 'Demo mode', state: 'live', configured: true, missing_env: [], unlocks: 'Sample records in this browser only' },
+        ],
+      }
+
+    case '/api/health':
+      return { ok: true, supabase: null }
+
+    default:
+      break
+  }
+
+  // Workspace-scoped reads and shipment detail are matched by shape.
+  const members = /^\/api\/businesses\/[^/]+\/members$/.exec(route)
+  if (members) {
+    return {
+      members: demo.members(),
+      pending_invitations: demo.pendingInvitations(),
+      note: DEMO_MESSAGE,
+    }
+  }
+
+  const shipmentDetail = /^\/api\/shipments\/([^/]+)$/.exec(route)
+  if (shipmentDetail) {
+    const id = shipmentDetail[1]
+    const match = demo.shipments().find((s) => s.id === id) ?? demo.shipments()[0]
+    return { ...match, events: demo.events(id), note: DEMO_MESSAGE }
+  }
+
+  return null
+}
 
 /* ------------------------------------------------------------------ */
 /* Authentication                                                      */
@@ -205,6 +364,15 @@ export const workspace = {
     p_role: string
     p_display_name?: string
   }) => post<Record<string, unknown>>('/api/rpc/invite_worker', input),
+
+  /**
+   * Redeems a code the owner was given. Without this, `invite` above is a one-way
+   * door: the database creates the code but the browser had nowhere to enter it.
+   * The database still checks the code is pending, unexpired and was issued to this
+   * account, so a wrong code fails here with the server's own reason.
+   */
+  acceptInvitation: (code: string) =>
+    post<Record<string, unknown>>('/api/rpc/accept_invitation', { p_code: code.trim() }),
 }
 
 /* ------------------------------------------------------------------ */
@@ -437,20 +605,51 @@ export const operations = {
       `/api/customers?business_id=${encodeURIComponent(businessId)}`,
     ),
   vehicles: (businessId: string) =>
-    get<{ vehicles: Record<string, unknown>[] }>(
+    get<{ vehicles: Record<string, unknown>[]; note?: string }>(
       `/api/vehicles?business_id=${encodeURIComponent(businessId)}`,
     ),
   createVehicle: (input: Record<string, unknown>) =>
     post<Record<string, unknown>>('/api/vehicles', input),
   carriers: () => get<{ carriers: Record<string, unknown>[] }>('/api/carriers'),
   offers: (businessId: string) =>
-    get<{ offers: Record<string, unknown>[] }>(
+    get<{ offers: Record<string, unknown>[]; note?: string }>(
       `/api/offers?business_id=${encodeURIComponent(businessId)}`,
     ),
   createOrder: (input: Record<string, unknown>) =>
     post<Record<string, unknown>>('/api/rpc/create_delivery_order', input),
   assignDriver: (input: Record<string, unknown>) =>
     post<Record<string, unknown>>('/api/rpc/assign_driver', input),
+
+  /**
+   * Status and money columns only. Postgres re-validates the transition (0006), so
+   * this is a request, not a decision. Columns outside the service's allow-list are
+   * dropped and named back in `ignored_columns` rather than failing silently.
+   */
+  patchOrder: (orderId: string, input: Record<string, unknown>) =>
+    patch<{ orders: Record<string, unknown>[]; ignored_columns: string[]; note: string }>(
+      `/api/orders/${encodeURIComponent(orderId)}`,
+      input,
+    ),
+
+  /**
+   * Only p_order_id and p_driver_id are sent. The optional assignment columns vary
+   * between migrations, so naming just the two the database always requires keeps
+   * this working whichever version is deployed; the function supplies the defaults.
+   */
+  assignDriverTo: (orderId: string, driverId: string) =>
+    post<Record<string, unknown>>('/api/rpc/assign_driver', {
+      p_order_id: orderId,
+      p_driver_id: driverId,
+    }),
+
+  /* Marketplace (migrations 0017-0021). A vendor originates an offer, the carrier
+   * answers it, and an accepted offer becomes an ordinary order. */
+  createOffer: (input: Record<string, unknown>) =>
+    post<Record<string, unknown>>('/api/rpc/create_delivery_offer', input),
+  respondToOffer: (input: Record<string, unknown>) =>
+    post<Record<string, unknown>>('/api/rpc/respond_to_offer', input),
+  withdrawOffer: (offerId: string) =>
+    post<Record<string, unknown>>('/api/rpc/withdraw_offer', { p_offer_id: offerId }),
 }
 
 /* ------------------------------------------------------------------ */

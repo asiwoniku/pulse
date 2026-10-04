@@ -1,9 +1,11 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { operations, shipments, system } from '../lib/api'
-import { useQuery } from '../state/useQuery'
+import { useAction, useQuery } from '../state/useQuery'
 import { useSession } from '../state/session'
 import { Banner, EmptyState, ErrorState, PageHeader, Panel, Skeleton } from '../components/ui'
 import { DateTimeValue, Money, ShipmentRef, StatusBadge } from '../components/domain'
+import { CreateVehicleForm } from './CreateVehicleForm'
 
 /**
  * Directory pages: drivers, customers, vehicles, carriers, offers.
@@ -134,6 +136,132 @@ export function ListAreaPage({
     </>
   )
 }
+/** Readable labels for the lifecycle states. The raw value is the database's. */
+const STATUS_LABEL: Record<string, string> = {
+  requested: 'Requested',
+  under_review: 'Under review',
+  quoted: 'Quoted',
+  awaiting_customer_approval: 'Awaiting approval',
+  accepted: 'Accepted',
+  assigned: 'Assigned',
+  driver_accepted: 'Driver accepted',
+  driver_arrived: 'Arrived at pickup',
+  at_pickup: 'At pickup',
+  picked_up: 'Picked up',
+  in_transit: 'In transit',
+  arrival_attempted: 'Arrival attempted',
+  delivered: 'Delivered',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+  failed: 'Failed',
+}
+
+function statusLabel(value: string): string {
+  return STATUS_LABEL[value] ?? value.replace(/_/g, ' ')
+}
+
+/**
+ * One order plus the actions the database says are legal right now.
+ *
+ * `allowed_next` and `drivers_available` both arrive from /api/board, derived from
+ * the same edge table migration 0006 enforces. These buttons are therefore a
+ * *preview* of what may be allowed — Postgres decides, and a refusal is rendered
+ * verbatim rather than swallowed.
+ */
+function DispatchOrderRow({
+  order,
+  drivers,
+  currency,
+  onDone,
+}: {
+  order: Record<string, unknown>
+  drivers: Record<string, unknown>[]
+  currency: string | undefined
+  onDone: () => void
+}) {
+  const orderId = String(order.id ?? '')
+  const status = String(order.status ?? '')
+  const allowed = Array.isArray(order.allowed_next)
+    ? (order.allowed_next as unknown[]).map(String)
+    : []
+  const [driverId, setDriverId] = useState('')
+  const move = useAction((next: string) => operations.patchOrder(orderId, { status: next }))
+  const assign = useAction(() => operations.assignDriverTo(orderId, driverId))
+  const busy = move.pending || assign.pending
+  // 'assigned' is reached by handing the order to a driver, so the picker replaces
+  // the plain button for that one edge.
+  const needsDriver = allowed.includes('assigned')
+
+  if (!allowed.length) {
+    return (
+      <tr>
+        <td className="mono">{String(order.reference ?? order.id)}</td>
+        <td><StatusBadge status={status} /></td>
+        <td>{String(order.destination_text ?? '—')}</td>
+        <td><DateTimeValue value={(order.promised_at as string) ?? null} /></td>
+        <td><Money amount={(order.price_amount as number) ?? null} currency={currency} /></td>
+        <td><span className="muted">No action available</span></td>
+      </tr>
+    )
+  }
+
+  return (
+    <tr>
+      <td className="mono">{String(order.reference ?? order.id)}</td>
+      <td><StatusBadge status={status} /></td>
+      <td>{String(order.destination_text ?? '—')}</td>
+      <td><DateTimeValue value={(order.promised_at as string) ?? null} /></td>
+      <td><Money amount={(order.price_amount as number) ?? null} currency={currency} /></td>
+      <td className="row-actions">
+        {(move.error || assign.error) ? (
+          <p className="muted" role="alert">{(move.error ?? assign.error)!.message}</p>
+        ) : null}
+        {needsDriver ? (
+          drivers.length ? (
+            <span className="inline-form">
+              <select
+                className="input input--sm"
+                aria-label={`Assign a driver to ${String(order.reference ?? order.id)}`}
+                value={driverId}
+                onChange={(e) => setDriverId(e.target.value)}
+              >
+                <option value="">Choose a driver…</option>
+                {drivers.map((d) => (
+                  <option key={String(d.id)} value={String(d.id)}>
+                    {String(d.full_name ?? d.id)}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="btn btn--primary btn--sm"
+                disabled={busy || !driverId}
+                onClick={() => void assign.run().then((r) => { if (r) onDone() })}
+              >
+                {assign.pending ? 'Assigning…' : 'Assign'}
+              </button>
+            </span>
+          ) : (
+            <span className="muted">No driver is available in this workspace</span>
+          )
+        ) : (
+          allowed.map((next) => (
+            <button
+              key={next}
+              type="button"
+              className="btn btn--secondary btn--sm"
+              disabled={busy}
+              onClick={() => void move.run(next).then((r) => { if (r) onDone() })}
+            >
+              {move.pending ? '…' : statusLabel(next)}
+            </button>
+          ))
+        )}
+      </td>
+    </tr>
+  )
+}
+
 /** Dispatch: a real board read, with the transition source shown. */
 export function DispatchPage() {
   const { activeBusiness } = useSession()
@@ -188,26 +316,18 @@ export function DispatchPage() {
                     <th scope="col">Destination</th>
                     <th scope="col">Promised</th>
                     <th scope="col">Price</th>
+                    <th scope="col">Next action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.orders.map((o) => (
-                    <tr key={String(o.id)}>
-                      <td className="mono">{String(o.reference ?? o.id)}</td>
-                      <td>
-                        <StatusBadge status={String(o.status ?? '')} />
-                      </td>
-                      <td>{String(o.destination_text ?? '—')}</td>
-                      <td>
-                        <DateTimeValue value={(o.promised_at as string) ?? null} />
-                      </td>
-                      <td>
-                        <Money
-                          amount={(o.price_amount as number) ?? null}
-                          currency={(o.currency as string) ?? activeBusiness?.currency}
-                        />
-                      </td>
-                    </tr>
+                    <DispatchOrderRow
+                      key={String(o.id)}
+                      order={o}
+                      drivers={data.drivers_available}
+                      currency={activeBusiness?.currency ?? undefined}
+                      onDone={board.reload}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -219,6 +339,45 @@ export function DispatchPage() {
           </>
         )}
       </Panel>
+    </>
+  )
+}
+
+/** Fleet: the vehicle directory plus the form that actually adds to it. */
+export function FleetPage() {
+  const { activeBusiness } = useSession()
+  const businessId = activeBusiness?.id ?? null
+  const query = useQuery(
+    businessId ? () => operations.vehicles(businessId) : null,
+    [businessId],
+  )
+  const rows = (query.data?.vehicles ?? []) as Record<string, unknown>[]
+
+  return (
+    <>
+      <PageHeader
+        eyebrow={activeBusiness?.name ?? 'Workspace'}
+        title="Fleet & vehicles"
+        description="Partner-managed vehicles. Pulse does not own these."
+      />
+      {businessId ? (
+        <CreateVehicleForm businessId={businessId} onCreated={query.reload} />
+      ) : null}
+      <Panel>
+        {query.error ? (
+          <ErrorState message={query.error.message} onRetry={query.reload} />
+        ) : query.initial ? (
+          <Skeleton rows={4} />
+        ) : rows.length === 0 ? (
+          <EmptyState
+            title="No vehicles yet"
+            body="Postgres returned no vehicles for this workspace. Records appear here only once they genuinely exist."
+          />
+        ) : (
+          <RecordTable rows={rows} columns={PREFERRED.vehicles} />
+        )}
+      </Panel>
+      {query.data?.note ? <Banner tone="info">{query.data.note}</Banner> : null}
     </>
   )
 }

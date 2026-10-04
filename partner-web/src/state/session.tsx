@@ -3,6 +3,8 @@ import {
   ApiError,
   auth,
   clearSession,
+  demo,
+  isDemoMode,
   loadSession,
   saveSession,
   workspace,
@@ -43,7 +45,14 @@ const Ctx = createContext<SessionState | null>(null)
 const BUSINESS_KEY = 'pulse.business'
 
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session | null>(() => loadSession())
+  // In demo mode there is no account and no token. A stand-in session is supplied
+  // so the shell renders and the reviewer can walk the product; it carries no
+  // credentials, so it cannot authenticate anything, and it is never persisted.
+  const demoSession: Session | null = isDemoMode()
+    ? { access_token: '', refresh_token: null, expires_in: null, user_id: 'demo-user', email: 'demo@example.invalid' }
+    : null
+
+  const [session, setSession] = useState<Session | null>(() => loadSession() ?? demoSession)
   const [businesses, setBusinesses] = useState<Business[]>([])
   const [activeId, setActiveId] = useState<string | null>(
     () => window.localStorage.getItem(BUSINESS_KEY),
@@ -59,6 +68,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (!session) {
       setBusinesses([])
       setLoading(false)
+      return
+    }
+    // Demo mode never calls the service: the workspace list is the fixture, so no
+    // token is needed and no real account is consulted.
+    if (isDemoMode()) {
+      setBusinesses([demo.business as unknown as Business])
+      setLoading(false)
+      setExpired(false)
       return
     }
     setLoading(true)

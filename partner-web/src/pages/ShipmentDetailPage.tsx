@@ -3,6 +3,7 @@ import { shipments, type ShipmentEvent } from '../lib/api'
 import { useQuery } from '../state/useQuery'
 import { Banner, EmptyState, ErrorState, PageHeader, Panel, Skeleton } from '../components/ui'
 import { DateTimeValue, ShipmentRef, StatusBadge, VerificationBadge } from '../components/domain'
+import { RecordEventForm } from './RecordEventForm'
 
 /**
  * Shipment detail and the Shipment Passport.
@@ -266,6 +267,10 @@ export function ShipmentDetailPage() {
             Partner-submitted events stay <strong>Pending review</strong> and do not change
             the order status on their own.
           </Banner>
+          <RecordEventForm
+            pulseShipmentId={shipment.pulse_shipment_id}
+            onRecorded={query.reload}
+          />
           <Panel
             title="Shipment Passport"
             description="Append-only. Events are never edited or deleted."

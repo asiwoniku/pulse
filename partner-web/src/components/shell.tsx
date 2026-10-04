@@ -27,8 +27,40 @@ import {
   type IconProps,
 } from './icons'
 import { useSession } from '../state/session'
-import { workspaceRecords } from '../lib/api'
+import { isDemoMode, setDemoMode, DEMO_MESSAGE, workspaceRecords } from '../lib/api'
 import { useQuery } from '../state/useQuery'
+
+/**
+ * The demo switch.
+ *
+ * It lives in the sidebar rather than a hidden route because turning it on is a
+ * decision someone makes on purpose. It is off by default, it is remembered per
+ * browser, and while it is on the rest of the shell keeps saying so — the point is
+ * that a reviewer can look at the whole product without a single real record, and
+ * can never afterwards be unsure which data they were looking at.
+ */
+export function DemoToggle() {
+  const [on, setOn] = useState(isDemoMode)
+  return (
+    <div className="demo-toggle">
+      <label className="demo-toggle__label">
+        <input
+          type="checkbox"
+          checked={on}
+          onChange={(e) => {
+            setDemoMode(e.target.checked)
+            setOn(e.target.checked)
+            // A reload is the honest way to apply it: every page re-reads its data,
+            // so nothing assembled before the switch can survive into demo mode.
+            window.location.reload()
+          }}
+        />
+        <span>Demo mode</span>
+      </label>
+      {on ? <p className="demo-toggle__note">{DEMO_MESSAGE}</p> : null}
+    </div>
+  )
+}
 
 const ICONS: Record<string, (p: IconProps) => JSX.Element> = {
   '/app/overview': IconGrid,
@@ -173,6 +205,7 @@ export function Sidebar({
       </nav>
 
       <div className="sidebar__footer">
+        {!collapsed ? <DemoToggle /> : null}
         <NavLink
           to="/app/help"
           onClick={onNavigate}

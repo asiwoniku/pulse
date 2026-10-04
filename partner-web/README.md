@@ -62,8 +62,35 @@ through every file:
 ## What works against live data today
 
 Overview, All shipments, Shipment detail + Shipment Passport, Create shipment,
-Dispatch, Drivers, Fleet, Customers, Carrier directory, Exceptions, Integrations,
-Settings. Everything else is routed and states its blocker plainly.
+Dispatch, Drivers, Fleet, Customers, Carrier directory, Offers, Exceptions,
+Integrations, Settings, Join a workspace. Warehouse, Moving, International,
+Documents, Audit, Payments, Reputation, Reports, Team, Verification and Help are
+implemented and read live workspace records — they are read-only views plus the
+forms each area genuinely supports.
+
+Write actions available in the browser:
+
+* **Dispatch** — advance an order through any status the database reports as legal
+  (`allowed_next`, straight from `/api/board`), and assign a driver from the
+  workspace's available list. Postgres still refuses an illegal move and the
+  refusal is shown verbatim.
+* **Shipment Passport** — record a manual event (`record_shipment_event`). It is
+  stored as partner-submitted and stays `pending_review`; it cannot advance the
+  order on its own.
+* **Fleet** — add a vehicle (`POST /api/vehicles`).
+* **Offers** — send an offer to a carrier, accept, decline or withdraw.
+* **Team** — invite a teammate; **Join a workspace** redeems the code they were
+  sent, so an invitation is no longer a one-way door.
+* **Settings** — save the company profile; **Moving** — create a moving request.
+
+## Demo mode
+
+The sidebar has a **Demo mode** switch, off by default and remembered per browser.
+While it is on, every page is served from `src/lib/demoData.ts` in the browser and a
+warning banner stays visible; nothing is read from or written to the database, and
+any write attempt is refused with a message rather than pretending to succeed. It
+exists so the whole product can be reviewed with no rows in Postgres. It is not a
+seed file and it is not enabled by any URL parameter or environment variable.
 
 ## Accessibility notes
 
@@ -77,8 +104,8 @@ decorative with the meaning carried by adjacent text.
 
 * Global search and notifications are present but disabled — no index or feed
   exists yet.
-* Warehouse, Moving, International, Documents, Audit, Payments, Reputation,
-  Reports, Team, Verification and Help are honest placeholders (see `NOT_BUILT`
-  in `src/App.tsx` for the specific reason for each).
+* Driver-side transitions (`respond_to_assignment`, `record_delivery_attempt`,
+  `capture_proof_of_delivery`) still live only in the mobile client; the partner
+  portal moves orders forward but does not act as a driver.
 * Creating a shipment does not yet emit a first tracking event; Postgres creates
   the shipment identity automatically when the order row is written.

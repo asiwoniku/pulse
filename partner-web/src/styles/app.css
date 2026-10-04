@@ -1167,6 +1167,34 @@ code,
   transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
 }
 
+/* --- demo mode ---------------------------------------------------------- */
+/* Deliberately loud. The whole point of the preview is that nobody can mistake it
+   for a live workspace afterwards, so the banner is the most prominent thing on the
+   page while it is on. */
+.demo-banner {
+  padding: var(--space-4, 1rem) var(--space-6, 1.5rem) 0;
+}
+
+.demo-toggle {
+  padding: var(--space-3, 0.75rem) 0;
+  border-top: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+}
+
+.demo-toggle__label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+  cursor: pointer;
+  font-size: 0.8125rem;
+}
+
+.demo-toggle__note {
+  margin: var(--space-2, 0.5rem) 0 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--muted, #9aa6b6);
+}
+
 .auth .input::placeholder {
   color: #9aa6b6;
 }

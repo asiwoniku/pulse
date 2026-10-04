@@ -2,14 +2,17 @@ import { useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { MobileDrawer, Sidebar, TopBar } from './components/shell'
 import { SessionProvider, useSession } from './state/session'
-import { system } from './lib/api'
+import { system, isDemoMode, DEMO_MESSAGE } from './lib/api'
+import { Banner } from './components/ui'
 import { SignInPage } from './pages/SignInPage'
 import { OverviewPage } from './pages/OverviewPage'
 import { ShipmentsPage } from './pages/ShipmentsPage'
 import { ShipmentDetailPage } from './pages/ShipmentDetailPage'
 import { CreateShipmentPage } from './pages/CreateShipmentPage'
-import { DispatchPage, ExceptionsPage, IntegrationsPage, ListAreaPage } from './pages/Areas'
+import { DispatchPage, ExceptionsPage, FleetPage, IntegrationsPage, ListAreaPage } from './pages/Areas'
 import { SettingsPage } from './pages/SettingsPage'
+import { JoinPage } from './pages/JoinPage'
+import { OffersPage } from './pages/OffersPage'
 import {
   AuditPage,
   DocumentsPage,
@@ -37,6 +40,7 @@ function AppLayout() {
   const [collapsed, setCollapsed] = useState(false)
   const [drawer, setDrawer] = useState(false)
   const [health, setHealth] = useState<{ ok: boolean; label: string } | null>(null)
+  const [demo] = useState(isDemoMode)
   const { session } = useSession()
   const location = useLocation()
   const navigate = useNavigate()
@@ -94,6 +98,13 @@ function AppLayout() {
           }
           health={health}
         />
+        {demo ? (
+          <div className="demo-banner">
+            <Banner tone="warning" title="Demo mode — fictional data">
+              {DEMO_MESSAGE}
+            </Banner>
+          </div>
+        ) : null}
         <main className="content" id="main-content" key={location.pathname}>
           <Routes>
             <Route path="/app/overview" element={<OverviewPage />} />
@@ -117,17 +128,7 @@ function AppLayout() {
                 />
               }
             />
-            <Route
-              path="/app/fleet"
-              element={
-                <ListAreaPage
-                  title="Fleet & vehicles"
-                  description="Partner-managed vehicles. Pulse does not own these."
-                  area="vehicles"
-                  endpoint="vehicles"
-                />
-              }
-            />
+            <Route path="/app/fleet" element={<FleetPage />} />
             <Route
               path="/app/customers"
               element={
@@ -150,6 +151,7 @@ function AppLayout() {
                 />
               }
             />
+            <Route path="/app/offers" element={<OffersPage />} />
             <Route path="/app/integrations" element={<IntegrationsPage />} />
             <Route path="/app/warehouse" element={<WarehousePage />} />
             <Route path="/app/moving" element={<MovingPage />} />
@@ -160,6 +162,7 @@ function AppLayout() {
             <Route path="/app/reputation" element={<ReputationPage />} />
             <Route path="/app/reports" element={<ReportsPage />} />
             <Route path="/app/team" element={<TeamPage />} />
+            <Route path="/app/join" element={<JoinPage />} />
             <Route path="/app/company/verification" element={<VerificationPage />} />
             <Route path="/app/help" element={<HelpPage />} />
             <Route path="/app/settings" element={<SettingsPage />} />
