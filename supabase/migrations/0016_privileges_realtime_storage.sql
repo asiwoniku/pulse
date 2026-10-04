@@ -13,6 +13,27 @@ grant usage on schema public to anon, authenticated;
 grant execute on all functions in schema public to authenticated;
 revoke execute on all functions in schema public from anon;
 
+-- CRITICAL: Postgres grants EXECUTE on every new function to PUBLIC by default.
+-- Revoking from anon and authenticated above is NOT enough, because PUBLIC is a
+-- separate implicit grant that both roles inherit -- so an anon key could still
+-- call SECURITY DEFINER functions, including ones that check no caller at all.
+-- Revoking from PUBLIC is what actually closes it, and it does not affect
+-- authenticated, which now holds a direct grant from the line above.
+do $$
+declare
+  r record;
+begin
+  for r in
+    select p.oid::regprocedure::text as signature
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+  loop
+    execute 'revoke all on function ' || r.signature || ' from public';
+  end loop;
+end;
+$$;
+
 -- Never callable from a client: internal or audit-writing.
 -- Guarded rather than listed flat: write_audit() is referenced here and in the
 -- verification queries, but no migration creates it, so revoking it directly

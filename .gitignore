@@ -45,3 +45,29 @@ GoogleService-Info.plist
 *.tmp
 supabase/.branches/
 supabase/.temp/
+
+# --- Python bytecode ---
+# `compileall` writes these next to the source, and they are machine-specific
+# (cpython-312 vs cpython-314 differ per interpreter). They must never be
+# committed: they are build output, they bloat every diff, and a stale .pyc can
+# be imported in preference to the .py it was compiled from.
+__pycache__/
+*.py[cod]
+*.pyd
+.Python
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Node / frontend ---
+node_modules/
+.vite/
+dist/
+.next/
+*.tsbuildinfo
+.env.local
+.env.*.local
