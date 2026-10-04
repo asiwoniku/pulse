@@ -8,16 +8,22 @@ truth**, and **an unconfigured integration is shown as unconfigured**.
 ## Shape
 
 ```
-Android (Kotlin/Compose)      iOS (Swift/SwiftUI)
-        |        dispatch · driver · customer links
-        +----------------+-------------------------+
-                         |  HTTPS / WebSocket
-              Supabase  (PostgREST · Auth ·
-                         Realtime · Storage)
-                         |
-              Postgres: schema · RLS · triggers · RPCs
-                  state machine · RBAC · history
+Flutter mobile (Android)       Partner web portal
+     |    offline preview           |
+     |    (live wiring pending)     | HTTPS / user token
+     +------------------------------+
+                    |
+          Supabase (PostgREST · Auth ·
+                    Realtime · Storage)
+                    |
+          Postgres: schema · RLS · triggers · RPCs
+              state machine · RBAC · history
 ```
+
+The earlier Kotlin/Compose app is retained under `android/` as a prototype.
+The active Android project is `mobile/`, implemented in Flutter. The current
+Flutter build intentionally uses local example records only; it does not yet
+connect to Supabase.
 
 There is intentionally nothing between the clients and Postgres (ADR-002). What
 the clients send is a request to do something; what decides whether it may happen
@@ -65,6 +71,17 @@ status. `delivered` requires captured proof (recipient name, a photo or
 signature URL, and the OTP when the business asked for one). `completed` is a business decision made by staff, and it is the event
 that moves a driver's real workload counter. Every move writes an
 `order_status_history` row inside the same transaction, so the trail cannot miss.
+
+## Marketplace shipment identity
+
+Each order has one provider-neutral shipment record with an immutable public
+Pulse ID. The order remains the carrier's operational record; shipment events
+add a source-aware timeline without creating a competing status machine.
+Database triggers mirror genuine order creation/status history into that
+append-only timeline. User-submitted provider events retain their source and
+verification level (`provider_reported` or `pending_review`) and cannot advance
+the order. RLS exposes shipment records only to linked order participants and
+the vendor that originated an accepted offer.
 
 ## Unconfigured boundaries
 

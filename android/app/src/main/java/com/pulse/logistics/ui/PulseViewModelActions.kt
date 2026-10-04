@@ -98,3 +98,30 @@ fun PulseViewModel.setAvailability(status: DriverStatus) = guard {
     ops.setAvailability(status)
     _state.update { it.copy(message = "Availability set to ${status.label}.") }
 }
+
+fun PulseViewModel.recordShipmentEvent(
+    shipmentRowId: String,
+    pulseShipmentId: String,
+    eventType: String,
+    idempotencyKey: String,
+    location: String?,
+    note: String?,
+) = guard {
+    shipmentData.recordManualEvent(
+        pulseShipmentId = pulseShipmentId,
+        eventType = eventType,
+        idempotencyKey = idempotencyKey,
+        location = location,
+        note = note,
+    )
+    val events = shipmentData.events(shipmentRowId)
+    val shipments = shipmentData.shipments(workspace().id)
+    _state.update {
+        it.copy(
+            shipments = shipments,
+            selectedShipmentId = shipmentRowId,
+            shipmentEvents = events,
+            message = "Shipment event recorded.",
+        )
+    }
+}

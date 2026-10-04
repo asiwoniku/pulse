@@ -1,13 +1,19 @@
 # Pulse Android
 
-Kotlin + Jetpack Compose client for dispatch, driver, and workspace flows. It is a
-thin, honest client: every business rule is enforced in `supabase/migrations`, and
-this module only asks for things and renders what comes back.
+Kotlin + Jetpack Compose client for dispatch, driver, workspace, and shipment
+passport workflows. Every business rule is enforced in `supabase/migrations`;
+the live app only asks for things and renders what comes back.
+
+For the full product scope, architecture, Android Studio setup, and demo-data
+boundary, start with [ABOUT.md](./ABOUT.md).
 
 ## Configure before building
 
-The app has **no** fake backend and no bundled sample data. An unconfigured build
-starts, shows an amber "not configured" banner, and refuses to make requests.
+The live app has no fake backend. An unconfigured build shows an amber
+"not configured" banner and refuses to make requests. Debug builds additionally
+offer a separate, read-only mock-data preview; its fixtures are kept under
+`app/src/debug/` and are not used by authenticated operations. Release builds
+disable that entry point.
 
 Create `android/local.properties`:
 
@@ -29,6 +35,8 @@ cd android
 ./gradlew :app:testDebugUnitTest
 ```
 
+On Windows PowerShell, use `.\gradlew.bat` instead of `./gradlew`.
+
 ## Layout
 
 ```
@@ -39,7 +47,10 @@ app/src/main/java/com/pulse/logistics/
   core/network/SupabaseClient.kt PostgREST + GoTrue calls, error mapping
   core/network/SessionStore.kt   DataStore session, active workspace
   data/                          AuthApi, WorkspaceApi, OrdersApi, OperationsApi
+  data/ShipmentsApi.kt           RLS-filtered passport reads and manual events
   ui/                            PulseViewModel(+Actions), PulseApp, Components
+app/src/debug/                    Isolated offline fixtures and preview
+app/src/release/                  No-fixtures preview stub
 ```
 
 ## Deliberate client rules
@@ -52,8 +63,9 @@ app/src/main/java/com/pulse/logistics/
 - **No optimistic status.** A board that lies about a stage is worse than a slow one.
 - **Unknown enum text decodes to null** and is printed raw rather than mapped to a
   guess, so a column or value added by a later migration cannot be silently mislabelled.
-- **Empty is rendered as empty.** `No orders yet in this workspace.` is a real state
-  of the system, not a placeholder to be filled with demo rows.
+- **Empty live data is rendered as empty.** `No orders yet in this workspace.` is a
+  real state of the system. Debug examples require explicitly opening the separate
+  offline preview and carry a persistent sample-data label on every item.
 
 ## What is still unconfigured (and shown as such)
 
@@ -70,8 +82,8 @@ says what is missing instead of faking a result.
 
 ## Verified / not verified
 
-The Kotlin sources have **not** been compiled here: this workspace has no Android SDK
-or Gradle distribution, so `assembleDebug` was never run. Expect the first build on a
-machine with SDK 36 to surface dependency-version and Compose API issues; the versions
-in `gradle/libs.versions.toml` are pinned guesses for AGP 9.3.1 / Kotlin 2.2.10 and may
-need adjusting to what resolves in your environment.
+The project requests JDK 17 and Android SDK Platform 36. Build and test results
+are tracked in [ABOUT.md](./ABOUT.md) and should be repeated after changing the
+Compose UI or Supabase contract. A local build can validate compilation but does
+not verify a deployed Supabase project, migration `0022`, real RLS membership, or
+provider integrations.

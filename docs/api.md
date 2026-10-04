@@ -1,10 +1,11 @@
 # Pulse RPC and read contract
 
-Both clients consume the same Supabase surface. This table is the shared
-contract: the parameter names and types below are literally the Postgres
-signatures in `supabase/migrations`, so a client that matches this file matches
-the database. Anything a client is tempted to compute itself is listed at the
-bottom as **server-derived** — do not reimplement it.
+This is the shared Supabase surface for live clients. The Flutter project under
+`mobile/` currently remains an offline preview and has not integrated these
+calls. This table is the contract: the parameter names and types below are the
+Postgres signatures in `supabase/migrations`, so a client that matches this
+file matches the database. Anything a client is tempted to compute itself is
+listed at the bottom as **server-derived** — do not reimplement it.
 
 Calling convention: `POST {SUPABASE_URL}/rest/v1/rpc/<name>` with the user's
 `Authorization: Bearer <access_token>`, `apikey`, `Content-Type: application/json`,
@@ -37,11 +38,41 @@ Reads: `businesses`, `business_members`, `business_invitations` (staff only),
 | `record_delivery_attempt` | `p_order_id`, `p_event delivery_event`, `p_note?` | `void` | neither the assigned driver nor staff |
 | `capture_proof_of_delivery` | `p_order_id`, `p_delivered_to_name`, `p_signature_url?`, `p_photo_url?`, `p_otp_code?` | `orders` | not assigned driver; no artefact captured; OTP missing or wrong when required |
 | `set_driver_availability` | `p_status driver_status`, `p_driver_id?` | `drivers` | driver changing someone else's status; staff without rights; no driver profile linked to account |
+| `record_shipment_event` | `p_pulse_shipment_id text`, `p_event_type text`, `p_source_type text`, `p_idempotency_key text`, `p_source_reference?`, `p_occurred_at?`, `p_location?`, `p_latitude?`, `p_longitude?`, `p_evidence_refs?`, `p_metadata?` | `pulse_shipment_events` | caller cannot operate the carrier/originator workspace; unsupported event/source; invalid coordinates/evidence; idempotency key reused for a different event |
 
 Reads: `orders` (embedded `customers`, `locations`, `driver_assignments`),
 `order_status_history` (append-only, ordered by `occurred_at`),
 `driver_assignments`, `assignment_events`, `drivers`, `customers`, `vehicles`,
-`locations`.
+`locations`, `pulse_shipments`, `pulse_shipment_events`.
+
+Every order is linked to an immutable `PLS-<country>-<sequence>` identifier.
+Order status history is mirrored into the shipment timeline by database triggers.
+Those first-party events are marked `verified`; events submitted through
+`record_shipment_event` are marked `provider_reported` (partner app/facility
+scan) or `pending_review` (manual entry) and never change the order status.
+Every event requires an idempotency key. Provider API/webhook source types are
+reserved for trusted server-side ingestion, not this authenticated RPC. Event
+rows are append-only and visible only to order participants and the vendor that
+originated the offer.
+
+### Partner portal HTTP reads
+
+The Python service forwards the signed-in user's token to Supabase and does not
+elevate shipment reads:
+
+| Route | Purpose |
+|---|---|
+| `GET /api/shipments?business_id=<uuid>&limit=25&offset=0&q=<PLS-id>&status=<state>` | Paginated workspace passport list; search matches the canonical shipment ID. |
+| `GET /api/shipments/<shipment-row-uuid>` | Shipment summary, minimal order fields and up to the latest 500 events in chronological order. |
+| `GET /api/carriers?p_search=<name>&p_city=<city>` | Existing vendor-only carrier directory RPC. |
+| `GET /api/offers?business_id=<uuid>` | Existing RLS-filtered sent/received offers. |
+
+Shipment responses are returned only when Supabase RLS permits them; a missing
+or invisible shipment is a 404. The portal lets an operator record a manual event
+with an idempotency key. It does not let browser input claim a provider/facility
+source, make a manual event verified, or change canonical order status. The
+carrier directory and offer creation remain backed by the existing
+`browse_carriers` and `create_delivery_offer` database functions.
 
 ## Status transitions (server-derived)
 

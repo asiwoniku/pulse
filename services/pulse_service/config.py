@@ -94,8 +94,8 @@ PROVIDERS: tuple[Provider, ...] = (
         requires=("SUPABASE_URL", "SUPABASE_ANON_KEY"),
         docs="supabase/README.md",
         optional=("SUPABASE_SERVICE_ROLE_KEY",),
-        offline_note="Nothing works without this. The portal shows an empty board "
-        "rather than sample orders.",
+        offline_note="Nothing live works without this. Operational views stay empty "
+        "rather than showing sample orders.",
     ),
     Provider(
         key="maps:nominatim",

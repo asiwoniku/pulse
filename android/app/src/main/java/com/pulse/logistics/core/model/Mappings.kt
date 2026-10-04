@@ -1,5 +1,8 @@
 package com.pulse.logistics.core.model
 
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+
 /** The dispatch board row. */
 data class OrderSummary(
     val id: String,
@@ -14,6 +17,27 @@ data class OrderSummary(
     val paymentStatus: PaymentStatus?,
     val requiresOtp: Boolean,
     val scheduledAt: String?,
+)
+
+data class ShipmentSummary(
+    val id: String,
+    val pulseId: String,
+    val status: String?,
+    val lastVerifiedAt: String?,
+    val lastVerifiedLocation: String?,
+    val orderReference: String?,
+    val pickup: String?,
+    val destination: String?,
+)
+
+data class ShipmentEventSummary(
+    val id: String,
+    val eventType: String,
+    val source: String?,
+    val verification: String?,
+    val occurredAt: String?,
+    val location: String?,
+    val note: String?,
 )
 
 /** One assignment the signed-in driver must act on. */
@@ -65,6 +89,36 @@ fun OrderDto.toSummary(): OrderSummary? {
         paymentStatus = PaymentStatus.from(payment_status),
         requiresOtp = requires_otp == true,
         scheduledAt = scheduled_at ?: requested_at,
+    )
+}
+
+fun ShipmentDto.toSummary(order: OrderDto?): ShipmentSummary? {
+    val shipmentId = id ?: return null
+    val publicId = pulse_shipment_id ?: return null
+    return ShipmentSummary(
+        id = shipmentId,
+        pulseId = publicId,
+        status = current_status,
+        lastVerifiedAt = last_verified_event_at,
+        lastVerifiedLocation = last_verified_location,
+        orderReference = order?.reference,
+        pickup = order?.pickup_text,
+        destination = order?.destination_text,
+    )
+}
+
+fun ShipmentEventDto.toSummary(): ShipmentEventSummary? {
+    val eventId = event_id ?: return null
+    val eventType = event_type ?: return null
+    val note = (metadata?.get("note") as? JsonPrimitive)?.contentOrNull
+    return ShipmentEventSummary(
+        id = eventId,
+        eventType = eventType,
+        source = source_type,
+        verification = verification_status,
+        occurredAt = occurred_at ?: received_at,
+        location = location,
+        note = note,
     )
 }
 

@@ -1,8 +1,8 @@
 ﻿/* Pulse partner portal.
  *
  * Rules this file follows, because the product promised them:
- *  - there is no sample data. If a fetch returns nothing, the board says nothing and
- *    says why. A populated demo would hide a broken RLS policy.
+ *  - live operational views never invent data. The opt-in workflow preview uses
+ *    fictional records in separate browser storage and never fills live views.
  *  - the token kept here is the caller's own; the service forwards it and the
  *    database decides. This page never receives a service-role key.
  *  - buttons for status changes come from the transition graph, so an illegal move
@@ -12,6 +12,42 @@
 
 const SESSION_KEY = "pulse.session";
 const POLL_MS = 20000;
+const DEMO_KEY = "pulse.partner-demo";
+const DEMO_SCREENS = [
+  "demo-application",
+  "demo-pending",
+  "demo-onboarding",
+  "demo-orders",
+];
+const DEMO_SAMPLE_ORDERS = [
+  {
+    id: "demo-order-1",
+    reference: "DEMO-26001",
+    customer: "Northstar Market (sample)",
+    route: "Victoria Island → Ikeja",
+    status: "in_transit",
+    detail: "Office supplies · Sample record only",
+    events: ["Order created · sample", "Pickup confirmed · sample", "In transit · sample"],
+  },
+  {
+    id: "demo-order-2",
+    reference: "DEMO-26002",
+    customer: "Green Basket Foods (sample)",
+    route: "Yaba → Lekki Phase 1",
+    status: "assigned",
+    detail: "Temperature-safe parcel · Sample record only",
+    events: ["Order created · sample", "Driver assigned · sample"],
+  },
+  {
+    id: "demo-order-3",
+    reference: "DEMO-25988",
+    customer: "Studio Eleven (sample)",
+    route: "Surulere → Onikan",
+    status: "delivered",
+    detail: "Documents · Sample record only",
+    events: ["Order created · sample", "Pickup confirmed · sample", "Delivered · sample"],
+  },
+];
 
 const PAYMENT_STATUSES = [
   "unpaid",
@@ -34,9 +70,20 @@ const state = {
   status: null,
   poll: null,
   openOrderId: null,
+  openShipmentId: null,
   view: "dispatch",
   orders: [],
+  shipments: [],
+  customers: [],
+  customersHasMore: false,
+  vehicles: [],
   business: null,
+  authMode: "signin",
+  demoScreen: null,
+  demoOrderId: null,
+  demoOrderFilter: "all",
+  demoPartnerView: "overview",
+  demoLoaderTimeout: null,
 };
 
 const el = (id) => document.getElementById(id);
@@ -109,27 +156,878 @@ function timeAgo(value) {
   return new Date(value).toLocaleDateString();
 }
 
+function readDemoState() {
+  try {
+    const saved = localStorage.getItem(DEMO_KEY);
+    return saved
+      ? JSON.parse(saved)
+      : {
+          application: null,
+          onboardingStep: 0,
+          onboardingComplete: false,
+          services: ["Local delivery"],
+          serviceAreas: "Lagos",
+          inviteEmail: "",
+          orders: DEMO_SAMPLE_ORDERS.map((order) => ({ ...order, events: [...order.events] })),
+          drivers: [],
+          vehicles: [],
+          requests: [],
+          teamMembers: [],
+          settings: { orderNotifications: true, teamNotifications: true },
+        };
+  } catch (_) {
+    return {
+      application: null,
+      onboardingStep: 0,
+      onboardingComplete: false,
+      services: ["Local delivery"],
+      serviceAreas: "Lagos",
+      inviteEmail: "",
+      orders: DEMO_SAMPLE_ORDERS.map((order) => ({ ...order, events: [...order.events] })),
+      drivers: [],
+      vehicles: [],
+      requests: [],
+      teamMembers: [],
+      settings: { orderNotifications: true, teamNotifications: true },
+    };
+  }
+}
+
+function saveDemoState(data) {
+  try {
+    localStorage.setItem(DEMO_KEY, JSON.stringify(data));
+    return true;
+  } catch (error) {
+    const note = el("demo-application-note") || el("onboarding-note");
+    if (note) note.textContent = `This browser could not save the demo progress: ${describe(error)}`;
+    return false;
+  }
+}
+
+function demoApplicationTemplate() {
+  return {
+    id: "demo-application-1",
+    company: "Harbourline Logistics (Demo)",
+    kind: "carrier",
+    representative: "Ada Okafor (Demo)",
+    email: "ada@harbourline.example",
+    phone: "+234 800 000 0101",
+    city: "Lagos",
+    status: "pending_review",
+    reviewerNote: "",
+    submittedAt: new Date().toISOString(),
+    documents: [
+      { name: "Business registration", reference: "Sample reference · no real certificate", status: "sample" },
+      { name: "Representative identity", reference: "Sample reference · no ID image stored", status: "sample" },
+      { name: "Business address evidence", reference: "Sample reference · not independently checked", status: "sample" },
+    ],
+  };
+}
+
+function demoEscape(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character]);
+}
+
+function showDemoScreen(screen) {
+  if (screen === "demo-onboarding" || screen === "demo-orders") {
+    const demo = readDemoState();
+    if (!demo.application || demo.application.status !== "approved") {
+      showDemoScreen("demo-pending");
+      return;
+    }
+    if (screen === "demo-orders" && !demo.onboardingComplete) {
+      showDemoScreen("demo-onboarding");
+      return;
+    }
+  }
+  state.demoScreen = screen || null;
+  if (state.demoLoaderTimeout) {
+    window.clearTimeout(state.demoLoaderTimeout);
+    state.demoLoaderTimeout = null;
+  }
+  show(el("demo-page-loading"), screen === "demo-orders");
+  if (screen === "demo-orders") {
+    state.demoLoaderTimeout = window.setTimeout(() => {
+      show(el("demo-page-loading"), false);
+      state.demoLoaderTimeout = null;
+    }, 700);
+  }
+  show(el("landing"), !screen);
+  show(el("auth"), false);
+  show(el("partner-onboarding"), false);
+  show(el("workspace"), false);
+  show(el("mainnav"), false);
+  show(el("signout"), false);
+  show(el("business"), false);
+  show(el("whoami"), false);
+  for (const id of DEMO_SCREENS) show(el(id), id === screen);
+  if (screen === "demo-application") {
+    fillDemoApplicationForm();
+  } else if (screen === "demo-pending") {
+    renderDemoPending();
+  } else if (screen === "demo-onboarding") {
+    renderDemoOnboarding();
+  } else if (screen === "demo-orders") {
+    renderDemoOrders();
+  }
+  window.scrollTo({ top: 0, behavior: "instant" });
+}
+
+function openApprovedDemoAccount() {
+  const demo = ensureDemoApplication();
+  const application = demo.application;
+  application.status = "approved";
+  application.reviewerNote = "Approved in the demo preview. No real identity or company verification was performed.";
+  application.reviewedAt = new Date().toISOString();
+  demo.onboardingStep = 3;
+  demo.onboardingComplete = true;
+  demo.services = demo.services && demo.services.length ? demo.services : ["Local delivery", "Intercity delivery"];
+  demo.serviceAreas = demo.serviceAreas || `${application.city}, Ogun`;
+  demo.profile = demo.profile || { email: application.email, phone: application.phone };
+  if (!demo.teamMembers || !demo.teamMembers.length) {
+    demo.teamMembers = [
+      { name: application.representative, email: application.email, role: "Owner" },
+      { name: "Chidi Nwosu (Demo)", email: "chidi@harbourline.example", role: "Dispatcher" },
+    ];
+  }
+  if (!demo.drivers || !demo.drivers.length) demo.drivers = [
+    { id: "demo-driver-1", name: "Chidi Nwosu (Demo)", phone: "+234 800 000 0611", status: "available", completed: 42, rating: "4.9" },
+    { id: "demo-driver-2", name: "Zainab Yusuf (Demo)", phone: "+234 800 000 0722", status: "on_delivery", completed: 37, rating: "4.8" },
+    { id: "demo-driver-3", name: "Emeka Okoro (Demo)", phone: "+234 800 000 0833", status: "available", completed: 29, rating: "4.7" },
+  ];
+  if (!demo.vehicles || !demo.vehicles.length) demo.vehicles = [
+    { id: "demo-vehicle-1", label: "Van 01 (Demo)", registration: "SAMPLE-LAG-01", type: "van", capacity: "Light parcels · sample only" },
+    { id: "demo-vehicle-2", label: "Motorbike 02 (Demo)", registration: "SAMPLE-LAG-02", type: "motorbike", capacity: "Documents and small parcels · sample only" },
+  ];
+  if (!demo.requests || !demo.requests.length) demo.requests = [
+    { id: "demo-request-1", requester: "Green Basket Foods (Demo)", route: "Lekki Phase 1 → Victoria Island", load: "6 insulated food crates", fee: "NGN 18,500", status: "open", time: "Today · 10:24" },
+    { id: "demo-request-2", requester: "Northstar Market (Demo)", route: "Ikeja → Yaba", load: "Office supplies · 4 cartons", fee: "NGN 12,000", status: "accepted", time: "Today · 09:50" },
+    { id: "demo-request-3", requester: "Studio Eleven (Demo)", route: "Surulere → Onikan", load: "Documents · secure envelope", fee: "NGN 8,000", status: "open", time: "Yesterday · 16:10" },
+  ];
+  demo.settings = demo.settings || { orderNotifications: true, teamNotifications: true };
+  demo.orders = DEMO_SAMPLE_ORDERS.map((order) => ({ ...order, events: [...order.events] }));
+  if (!saveDemoState(demo)) return;
+  state.demoPartnerView = "overview";
+  showDemoScreen("demo-orders");
+}
+
+function startDemoApplication() {
+  const demo = readDemoState();
+  demo.application = demoApplicationTemplate();
+  demo.onboardingStep = 0;
+  demo.onboardingComplete = false;
+  demo.services = ["Local delivery"];
+  demo.serviceAreas = "Lagos";
+  demo.inviteEmail = "";
+  demo.orders = DEMO_SAMPLE_ORDERS.map((order) => ({ ...order, events: [...order.events] }));
+  demo.drivers = [];
+  demo.vehicles = [];
+  demo.requests = [];
+  demo.teamMembers = [];
+  if (!saveDemoState(demo)) return;
+  showDemoScreen("demo-application");
+}
+
+function fillDemoApplicationForm() {
+  const application = readDemoState().application || demoApplicationTemplate();
+  el("demo-company").value = application.company;
+  el("demo-kind").value = application.kind;
+  el("demo-representative").value = application.representative;
+  el("demo-email").value = application.email;
+  el("demo-phone").value = application.phone;
+  el("demo-city").value = application.city;
+  el("demo-confirm").checked = false;
+  el("demo-application-note").textContent = "";
+}
+
+function submitDemoApplication(event) {
+  event.preventDefault();
+  const demo = readDemoState();
+  const application = demo.application || demoApplicationTemplate();
+  application.company = el("demo-company").value.trim();
+  application.kind = el("demo-kind").value;
+  application.representative = el("demo-representative").value.trim();
+  application.email = el("demo-email").value.trim();
+  application.phone = el("demo-phone").value.trim();
+  application.city = el("demo-city").value.trim();
+  application.status = "pending_review";
+  application.reviewerNote = "";
+  application.submittedAt = new Date().toISOString();
+  demo.application = application;
+  if (!saveDemoState(demo)) return;
+  showDemoScreen("demo-pending");
+}
+
+function ensureDemoApplication() {
+  const demo = readDemoState();
+  if (!demo.application) {
+    demo.application = demoApplicationTemplate();
+    saveDemoState(demo);
+  }
+  return demo;
+}
+
+function renderDemoPending() {
+  const demo = ensureDemoApplication();
+  const application = demo.application;
+  const messages = {
+    pending_review: ["Your application is in review.", "A Pulse administrator would review the submitted business details and evidence before a partner workspace is activated. No verification has taken place in this demo."],
+    more_information: ["More information requested.", application.reviewerNote || "The reviewer left a sample note. No live application has been submitted."],
+    approved: ["Sample application approved.", "The demo administrator approved this sample application. This decision does not verify a real company or identity."],
+    declined: ["Application not approved in this demo.", application.reviewerNote || "A real decision would include a reason and a way to contact support."],
+  };
+  const copy = messages[application.status] || messages.pending_review;
+  el("demo-pending-title").textContent = copy[0];
+  el("demo-pending-copy").textContent = copy[1];
+  const current = application.status === "approved" ? 2 : 1;
+  el("demo-pending-decision").innerHTML = application.status === "pending_review"
+    ? '<span class="decision-indicator pending"></span><div><b>Under administrator review</b><small>Only an authorised reviewer should make real partner approval decisions.</small></div>'
+    : `<span class="decision-indicator ${application.status === "approved" ? "approved" : "needs-info"}"></span><div><b>${application.status === "approved" ? "Demo review decision" : application.status === "declined" ? "Demo review outcome" : "Reviewer requested information"}</b><small>${demoEscape(application.reviewerNote || (application.status === "approved" ? "Approved in demo only." : "No additional note."))}</small></div>`;
+  const stages = [...el("demo-pending").querySelectorAll(".review-progress span")];
+  stages.forEach((stage, index) => {
+    stage.classList.toggle("done", index === 0 || current > index);
+    stage.classList.toggle("active", index === current);
+    const icon = stage.querySelector("i");
+    if (index === 0 || current > index) icon.textContent = "✓";
+    else icon.textContent = `0${index + 1}`;
+  });
+  const actions = el("demo-pending").querySelector(".status-actions");
+  actions.innerHTML = "";
+  const editApplication = document.createElement("button");
+  editApplication.className = "ghost";
+  editApplication.type = "button";
+  editApplication.textContent = application.status === "more_information" ? "Edit and resubmit sample application" : "Start a fresh sample application";
+  editApplication.addEventListener("click", startDemoApplication);
+  actions.append(editApplication);
+  if (application.status === "approved") {
+    const setup = document.createElement("button");
+    setup.type = "button";
+    setup.textContent = "Continue to partner onboarding";
+    setup.addEventListener("click", () => showDemoScreen(
+      demo.onboardingComplete ? "demo-orders" : "demo-onboarding"
+    ));
+    actions.append(setup);
+  } else if (application.status === "more_information") {
+    const resubmit = document.createElement("button");
+    resubmit.className = "ghost";
+    resubmit.type = "button";
+    resubmit.textContent = "Submit sample follow-up";
+    resubmit.addEventListener("click", () => {
+      const latest = readDemoState();
+      latest.application.status = "pending_review";
+      latest.application.reviewerNote = "Sample follow-up submitted; awaiting review.";
+      latest.application.submittedAt = new Date().toISOString();
+      saveDemoState(latest);
+      renderDemoPending();
+    });
+    actions.append(resubmit);
+  }
+}
+
+function renderDemoOnboarding() {
+  const demo = readDemoState();
+  const application = demo.application || demoApplicationTemplate();
+  if (demo.onboardingComplete) {
+    el("setup-step-label").textContent = "DEMO WORKSPACE READY";
+    el("setup-step-title").textContent = "Your workspace is ready.";
+    el("setup-step-description").textContent = "The sample application was approved and all sample setup steps are complete.";
+    show(el("setup-back"), false);
+    el("setup-next").textContent = "Open partner workspace";
+    el("setup-step-content").innerHTML = `<div class="profile-review-card"><span class="profile-review-mark">${demoEscape(application.company.slice(0, 1))}</span><div><b>${demoEscape(application.company)}</b><small>${demoEscape(application.kind)} · ${demoEscape(application.city)}</small></div><span class="demo-status approved">Ready · demo only</span></div><div class="verified-banner"><span>✓</span><div><b>Demo journey complete</b><small>This sample account is not a real verified partner.</small></div></div>`;
+    el("setup-checklist-items").innerHTML = [
+      "Business application",
+      "Administrator decision",
+      "Business profile",
+      "Services & coverage",
+      "Team workspace",
+    ].map((title) => `<div class="checklist-line complete"><i>✓</i><span><b>${title}</b><small>Complete · demo</small></span></div>`).join("");
+    el("demo-onboarding").querySelectorAll(".onboarding-progress span").forEach((item) => {
+      item.classList.remove("active");
+      item.classList.add("done");
+    });
+    return;
+  }
+  const step = Math.max(0, Math.min(2, Number(demo.onboardingStep) || 0));
+  const labels = ["Confirm your business profile", "Choose services and coverage", "Set up your team"];
+  const descriptions = [
+    "Review the sample details that would become your partner workspace profile.",
+    "Select the service types your business offers and where you operate.",
+    "Add a teammate email for the demo, then finish your partner setup.",
+  ];
+  el("setup-step-label").textContent = `STEP ${step + 1} OF 3`;
+  el("setup-step-title").textContent = labels[step];
+  el("setup-step-description").textContent = descriptions[step];
+  show(el("setup-back"), step > 0);
+  el("setup-next").textContent = step === 2 ? "Finish onboarding" : "Continue";
+  const content = el("setup-step-content");
+  content.replaceChildren();
+  if (step === 0) {
+    content.innerHTML = `<div class="profile-review-card"><span class="profile-review-mark">${demoEscape(application.company.slice(0, 1))}</span><div><b>${demoEscape(application.company)}</b><small>${demoEscape(application.kind)} · ${demoEscape(application.city)}</small></div><span class="demo-status approved">Application approved · demo</span></div><div class="onboarding-fields"><label>Business contact email<input id="setup-business-email" type="email" value="${demoEscape(application.email)}" /></label><label>Business phone<input id="setup-business-phone" type="tel" value="${demoEscape(application.phone)}" /></label></div><p class="demo-inline-note">The sample profile is fictional. A real account would allow an authorised owner to review and maintain these details.</p>`;
+  } else if (step === 1) {
+    const services = ["Local delivery", "Intercity delivery", "Moving services"];
+    content.innerHTML = `<fieldset class="service-choice-group"><legend>What services do you provide?</legend>${services.map((service) => `<label class="service-choice"><input type="checkbox" name="demo-service" value="${demoEscape(service)}" ${demo.services.includes(service) ? "checked" : ""}/><span><b>${demoEscape(service)}</b><small>${service === "Local delivery" ? "Within your operating city" : service === "Intercity delivery" ? "Between cities and regions" : "Household and office moves"}</small></span><i></i></label>`).join("")}</fieldset><label>Service coverage<textarea id="setup-service-areas" rows="3" placeholder="Lagos, Ogun">${demoEscape(demo.serviceAreas)}</textarea></label><p class="demo-inline-note">Service listings are descriptive demo preferences only; they do not create rates, licences or marketplace availability.</p>`;
+  } else {
+    content.innerHTML = `<div class="team-setup-card"><span class="team-setup-icon">＋</span><div><b>Invite a teammate (optional)</b><small>Use a sample email address. Invitations are not sent in this demo.</small></div></div><label>Teammate business email<input id="setup-invite-email" type="email" placeholder="colleague@company.example" value="${demoEscape(demo.inviteEmail)}" /></label><label class="demo-consent ready-consent"><input id="setup-ready-check" type="checkbox"/><span>I’ve reviewed the sample workspace profile and selected services.</span></label><p class="demo-inline-note">In a live workspace, roles and invitations are controlled by your organisation’s permissions.</p>`;
+  }
+  const checklist = el("setup-checklist-items");
+  checklist.innerHTML = [
+    ["Business application", "Complete", true],
+    ["Administrator decision", "Approved in demo", true],
+    ["Business profile", step > 0 ? "Confirmed" : "To confirm", step > 0],
+    ["Services & coverage", step > 1 ? "Selected" : "To set up", step > 1],
+    ["Team workspace", demo.onboardingComplete ? "Ready" : "To finish", demo.onboardingComplete],
+  ].map(([title, status, done]) => `<div class="checklist-line ${done ? "complete" : ""}"><i>${done ? "✓" : "·"}</i><span><b>${title}</b><small>${status}</small></span></div>`).join("");
+  el("demo-onboarding").querySelectorAll(".onboarding-progress span").forEach((item, index) => {
+    item.classList.toggle("active", index === step);
+    item.classList.toggle("done", index < step);
+  });
+}
+
+function advanceDemoOnboarding(direction) {
+  const demo = readDemoState();
+  if (demo.onboardingComplete) {
+    showDemoScreen("demo-orders");
+    return;
+  }
+  const step = Math.max(0, Math.min(2, Number(demo.onboardingStep) || 0));
+  if (direction < 0) {
+    demo.onboardingStep = Math.max(0, step - 1);
+    if (saveDemoState(demo)) renderDemoOnboarding();
+    return;
+  }
+  if (step === 0) {
+    const email = el("setup-business-email").value.trim();
+    const phone = el("setup-business-phone").value.trim();
+    if (!email || !phone) {
+      banner("warn", "Add the sample business contact email and phone to continue.");
+      return;
+    }
+    demo.profile = { email, phone };
+  } else if (step === 1) {
+    demo.services = [...document.querySelectorAll('input[name="demo-service"]:checked')].map((input) => input.value);
+    demo.serviceAreas = el("setup-service-areas").value.trim();
+    if (!demo.services.length || !demo.serviceAreas) {
+      banner("warn", "Choose at least one service and add a service coverage area.");
+      return;
+    }
+  } else {
+    const email = el("setup-invite-email").value.trim();
+    if (email && !el("setup-invite-email").checkValidity()) {
+      banner("warn", "Enter a valid sample email, or leave the teammate field blank.");
+      return;
+    }
+    if (!el("setup-ready-check").checked) {
+      banner("warn", "Confirm the sample workspace setup before finishing.");
+      return;
+    }
+    demo.inviteEmail = email;
+    demo.onboardingComplete = true;
+    if (!demo.orders || !demo.orders.length) {
+      demo.orders = DEMO_SAMPLE_ORDERS.map((order) => ({ ...order, events: [...order.events] }));
+    }
+    if (!saveDemoState(demo)) return;
+    showDemoScreen("demo-orders");
+    return;
+  }
+  demo.onboardingStep = step + 1;
+  if (saveDemoState(demo)) renderDemoOnboarding();
+}
+
+function renderDemoOrders() {
+  const demo = readDemoState();
+  const application = demo.application || demoApplicationTemplate();
+  el("demo-workspace-name").textContent = application.company;
+  el("demo-greeting-name").textContent = (application.representative.split(/\s+/)[0] || "Partner").replace("(Demo)", "");
+  const orders = demo.orders || [];
+  el("demo-active-orders").textContent = orders.filter((order) => order.status !== "delivered").length;
+  el("demo-in-transit").textContent = orders.filter((order) => order.status === "in_transit").length;
+  el("demo-delivered").textContent = orders.filter((order) => order.status === "delivered").length;
+  const visible = orders.filter((order) =>
+    state.demoOrderFilter === "all" ||
+    (state.demoOrderFilter === "active" && order.status !== "delivered") ||
+    (state.demoOrderFilter === "delivered" && order.status === "delivered")
+  );
+  const list = el("demo-orders-list");
+  list.replaceChildren();
+  if (!visible.length) {
+    list.innerHTML = '<div class="empty">No sample orders in this filter.</div>';
+  } else {
+    for (const order of visible) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "demo-order-row";
+      row.innerHTML = `<span class="demo-order-ref">${demoEscape(order.reference)}</span><span class="demo-order-customer"><b>${demoEscape(order.customer)}</b><small>${demoEscape(order.route)}</small></span><span class="demo-order-description">${demoEscape(order.detail)}</span><span class="demo-order-status ${demoEscape(order.status)}">${demoEscape(order.status.replaceAll("_", " "))}</span><span class="demo-order-chevron">›</span>`;
+      row.addEventListener("click", () => {
+        state.demoOrderId = order.id;
+        renderDemoOrderDetail(order);
+      });
+      list.append(row);
+    }
+  }
+  for (const panel of el("demo-orders").querySelectorAll(".demo-partner-panel")) {
+    panel.classList.toggle("hidden", panel.id !== `demo-${state.demoPartnerView}-panel`);
+  }
+  el("demo-orders").querySelectorAll("[data-partner-view]").forEach((button) =>
+    button.classList.toggle("active", button.dataset.partnerView === state.demoPartnerView)
+  );
+  const profile = demo.profile || { email: application.email, phone: application.phone, areas: demo.serviceAreas };
+  el("demo-profile-name").value = application.company;
+  el("demo-profile-email").value = profile.email || application.email;
+  el("demo-profile-phone").value = profile.phone || application.phone;
+  el("demo-profile-city").value = application.city;
+  el("demo-profile-areas").value = profile.areas || demo.serviceAreas || application.city;
+  const settings = demo.settings || { orderNotifications: true, teamNotifications: true };
+  el("demo-setting-order-notifications").checked = settings.orderNotifications !== false;
+  el("demo-setting-team-notifications").checked = settings.teamNotifications !== false;
+  renderDemoPartnerActivity(orders);
+  renderDemoTeam(demo, application);
+  renderDemoDrivers(demo);
+  renderDemoCustomers(demo);
+  renderDemoFleet(demo);
+  renderDemoRequests(demo);
+}
+
+function renderDemoPartnerActivity(orders) {
+  const events = orders.flatMap((order) => order.events.map((event, index) => ({
+    order,
+    event,
+    index,
+  }))).slice().reverse().slice(0, 5);
+  const markup = events.length
+    ? events.map(({ order, event, index }) => `<article class="activity-row"><span class="activity-pin ${order.status === "delivered" ? "complete" : ""}"></span><div><b>${demoEscape(event)}</b><small>${demoEscape(order.reference)} · ${demoEscape(order.route)}</small></div><time>${index === order.events.length - 1 ? "Latest" : "Sample"}</time></article>`).join("")
+    : '<p class="queue-empty">No sample shipment updates yet.</p>';
+  el("demo-activity-feed").innerHTML = markup;
+  el("demo-shipments-list").innerHTML = markup;
+}
+
+function renderDemoTeam(demo, application) {
+  const members = demo.teamMembers || [{ name: application.representative, email: application.email, role: "Owner" }];
+  el("demo-team-list").innerHTML = members.map((member) => `<div class="demo-team-row"><span class="queue-avatar">${demoEscape(member.name.slice(0, 1))}</span><span><b>${demoEscape(member.name)}</b><small>${demoEscape(member.email)}</small></span><span class="demo-team-role">${demoEscape(member.role)}</span></div>`).join("");
+}
+
+function renderDemoDrivers(demo) {
+  const drivers = demo.drivers || [];
+  el("demo-drivers-list").innerHTML = drivers.length
+    ? drivers.map((driver) => `<article class="demo-driver-card"><div class="demo-driver-card-head"><span class="queue-avatar">${demoEscape(driver.name.slice(0, 1))}</span><span class="demo-driver-state ${driver.status === "available" ? "available" : "busy"}"><i></i>${demoEscape(driver.status.replaceAll("_", " "))}</span></div><h3>${demoEscape(driver.name)}</h3><p>${demoEscape(driver.phone)}</p><div class="demo-driver-stats"><span><b>${demoEscape(driver.rating)}</b><small>rating</small></span><span><b>${demoEscape(driver.completed)}</b><small>completed</small></span></div><button type="button" data-driver-toggle="${demoEscape(driver.id)}">${driver.status === "available" ? "Set on break" : driver.status === "on_delivery" ? "Mark delivery complete" : "Set available"}</button></article>`).join("")
+    : '<div class="demo-empty-state"><b>No sample drivers yet</b><p>Add drivers to preview fleet availability and assignment workflows.</p></div>';
+  el("demo-drivers-list").querySelectorAll("[data-driver-toggle]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const latest = readDemoState();
+      const driver = latest.drivers.find((item) => item.id === button.dataset.driverToggle);
+      if (!driver) return;
+      driver.status = driver.status === "available" ? "on_break" : "available";
+      if (!saveDemoState(latest)) return;
+      renderDemoDrivers(latest);
+    });
+  });
+}
+
+function renderDemoCustomers(demo) {
+  const customers = new Map();
+  for (const order of demo.orders || []) {
+    const key = order.customer;
+    if (!customers.has(key)) {
+      customers.set(key, {
+        name: key,
+        phone: order.customerPhone || "Not recorded in this sample",
+        orders: 0,
+      });
+    }
+    customers.get(key).orders += 1;
+  }
+  const list = [...customers.values()];
+  el("demo-customers-list").innerHTML = list.length
+    ? list.map((customer) => `<article class="demo-request-card"><div><h3>${demoEscape(customer.name)}</h3><p>${demoEscape(customer.phone)}</p></div><span>${customer.orders} sample order${customer.orders === 1 ? "" : "s"}</span></article>`).join("")
+    : '<div class="demo-empty-state"><b>No sample customers yet</b><p>Create a sample order to see its contact here.</p></div>';
+}
+
+function renderDemoFleet(demo) {
+  const vehicles = demo.vehicles || [];
+  el("demo-fleet-list").innerHTML = vehicles.length
+    ? vehicles.map((vehicle) => `<article class="demo-request-card"><div><h3>${demoEscape(vehicle.label)}</h3><p>${demoEscape(vehicle.registration || "Registration not provided")}</p></div><span>${demoEscape(vehicle.type)} · ${demoEscape(vehicle.capacity || "Capacity not recorded")}</span></article>`).join("")
+    : '<div class="demo-empty-state"><b>No sample vehicles yet</b><p>Add a clearly marked demo vehicle to preview the fleet list.</p></div>';
+}
+
+function addDemoVehicle(event) {
+  event.preventDefault();
+  const label = el("demo-vehicle-label").value.trim();
+  if (label.length < 2) {
+    el("demo-vehicle-note").textContent = "Enter a vehicle label with at least two characters.";
+    return;
+  }
+  const demo = readDemoState();
+  demo.vehicles = demo.vehicles || [];
+  demo.vehicles.push({
+    id: `demo-vehicle-${Date.now()}`,
+    label: `${label} (Demo)`,
+    registration: el("demo-vehicle-registration").value.trim(),
+    type: el("demo-vehicle-type").value,
+    capacity: el("demo-vehicle-capacity").value.trim(),
+  });
+  if (!saveDemoState(demo)) return;
+  el("demo-vehicle-form").reset();
+  el("demo-vehicle-note").textContent = "Sample vehicle saved locally. No real fleet data was changed.";
+  renderDemoFleet(demo);
+}
+
+function renderDemoRequests(demo) {
+  const requests = demo.requests || [];
+  const filter = state.demoRequestFilter || "all";
+  const visible = requests.filter((request) => filter === "all" || request.status === filter);
+  el("demo-requests-list").innerHTML = visible.length
+    ? visible.map((request) => `<article class="demo-request-card"><div class="demo-request-main"><span class="demo-request-icon">↗</span><div><span class="demo-request-meta">${demoEscape(request.requester)} · ${demoEscape(request.time)}</span><h3>${demoEscape(request.route)}</h3><p>${demoEscape(request.load)}</p></div></div><div class="demo-request-side"><b>${demoEscape(request.fee)}</b><span class="application-state ${request.status === "accepted" ? "approved" : "pending_review"}">${demoEscape(request.status)}</span>${request.status === "open" ? `<div><button type="button" data-request-action="accept" data-request-id="${demoEscape(request.id)}">Accept request</button><button type="button" class="ghost" data-request-action="decline" data-request-id="${demoEscape(request.id)}">Decline</button></div>` : `<small>Accepted in demo · no live order created</small>`}</div></article>`).join("")
+    : '<div class="demo-empty-state"><b>No requests match this filter</b><p>Try another filter to see sample delivery requests.</p></div>';
+  el("demo-requests-list").querySelectorAll("[data-request-action]").forEach((button) => {
+    button.addEventListener("click", () => respondDemoRequest(button.dataset.requestId, button.dataset.requestAction));
+  });
+  el("demo-requests-panel").querySelectorAll("[data-request-filter]").forEach((button) =>
+    button.classList.toggle("active", button.dataset.requestFilter === filter)
+  );
+}
+
+function respondDemoRequest(requestId, action) {
+  const demo = readDemoState();
+  const request = demo.requests.find((item) => item.id === requestId);
+  if (!request || request.status !== "open") return;
+  request.status = action === "accept" ? "accepted" : "declined";
+  request.response = action === "accept" ? "Accepted in demo only." : "Declined in demo only.";
+  if (!saveDemoState(demo)) return;
+  renderDemoRequests(demo);
+}
+
+function addDemoDriver() {
+  const demo = readDemoState();
+  const count = (demo.drivers || []).length + 1;
+  demo.drivers = demo.drivers || [];
+  demo.drivers.push({
+    id: `demo-driver-${Date.now()}`,
+    name: `Sample driver ${count}`,
+    phone: `+234 800 000 0${String(900 + count).slice(-3)}`,
+    status: "available",
+    completed: 0,
+    rating: "New",
+  });
+  if (saveDemoState(demo)) renderDemoDrivers(demo);
+}
+
+function setDemoPartnerView(view) {
+  state.demoPartnerView = view;
+  state.demoOrderId = null;
+  el("demo-order-detail").classList.add("hidden");
+  renderDemoOrders();
+  const panel = el(`demo-${view}-panel`);
+  if (panel) panel.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function renderDemoOrderDetail(order) {
+  const detail = el("demo-order-detail");
+  detail.classList.remove("hidden");
+  const nextStatus = { requested: "accepted", accepted: "assigned", assigned: "picked_up", picked_up: "in_transit", in_transit: "delivered" }[order.status];
+  const actionLabel = { requested: "Accept sample order", accepted: "Assign sample driver", assigned: "Confirm sample pickup", picked_up: "Advance sample to in transit", in_transit: "Mark sample delivered" }[order.status];
+  detail.innerHTML = `<div class="demo-detail-heading"><div><p class="eyebrow">SAMPLE ORDER ${demoEscape(order.reference)}</p><h2>${demoEscape(order.customer)}</h2><p>${demoEscape(order.route)} · ${demoEscape(order.detail)}</p></div><button class="ghost" type="button" id="demo-detail-close">Close</button></div><span class="demo-order-status ${demoEscape(order.status)}">${demoEscape(order.status.replaceAll("_", " "))}</span><ol class="demo-event-timeline">${order.events.map((event) => `<li>${demoEscape(event)}</li>`).join("")}</ol><div class="demo-order-actions"><button id="demo-advance-order" type="button" ${!nextStatus ? "disabled" : ""}>${actionLabel || "Order complete"}</button><label class="demo-upload-zone" for="demo-proof-file"><span class="upload-icon">↑</span><b>Add proof of delivery</b><small>Choose a sample image or PDF · up to 10 MB</small><input id="demo-proof-file" type="file" accept="image/*,.pdf,application/pdf" /></label></div><div id="demo-upload-progress" class="demo-upload-progress hidden" role="status" aria-live="polite"><span class="upload-spinner"></span><span><b>Preparing local preview…</b><small>File stays on this device. Nothing is sent.</small><i><em></em></i></span></div><p id="demo-upload-note" class="demo-inline-note">Sample controls only. Updates and attachments are not sent to a live partner, customer or carrier.</p>`;
+  el("demo-detail-close").addEventListener("click", () => detail.classList.add("hidden"));
+  el("demo-advance-order").addEventListener("click", () => advanceDemoOrder(order.id));
+  el("demo-proof-file").addEventListener("change", (event) => simulateDemoProofUpload(event.target.files[0]));
+}
+
+function simulateDemoProofUpload(file) {
+  if (!file) return;
+  const progress = el("demo-upload-progress");
+  if (file.size > 10 * 1024 * 1024) {
+    el("demo-upload-note").textContent = "That sample file is over the 10 MB preview limit. Choose a smaller file.";
+    return;
+  }
+  progress.classList.remove("hidden");
+  progress.querySelector("b").textContent = `Preparing ${file.name}`;
+  const bar = progress.querySelector("em");
+  bar.style.width = "0%";
+  let value = 0;
+  const timer = window.setInterval(() => {
+    value = Math.min(100, value + 14 + Math.floor(Math.random() * 17));
+    bar.style.width = `${value}%`;
+    if (value === 100) {
+      window.clearInterval(timer);
+      progress.classList.add("hidden");
+      el("demo-upload-note").textContent = `${file.name} preview complete. The file was not uploaded or stored; no bytes left this browser.`;
+      el("demo-upload-note").classList.add("upload-complete");
+    }
+  }, 110);
+}
+
+function saveDemoPartnerProfile() {
+  const demo = readDemoState();
+  const application = demo.application;
+  const company = el("demo-profile-name").value.trim();
+  const email = el("demo-profile-email").value.trim();
+  const phone = el("demo-profile-phone").value.trim();
+  const city = el("demo-profile-city").value.trim();
+  if (!company || !email || !el("demo-profile-email").checkValidity() || !phone || !city) {
+    el("demo-profile-note").textContent = "Enter a business name, valid email, phone and city.";
+    return;
+  }
+  application.company = company;
+  application.email = email;
+  application.phone = phone;
+  application.city = city;
+  const areas = el("demo-profile-areas").value.trim();
+  demo.profile = { email, phone, areas };
+  demo.serviceAreas = areas;
+  if (!saveDemoState(demo)) return;
+  el("demo-profile-note").textContent = "Demo profile saved in this browser only.";
+  renderDemoOrders();
+}
+
+function addDemoTeamMember(event) {
+  event.preventDefault();
+  const input = el("demo-invite-email");
+  if (!input.checkValidity()) return;
+  const demo = readDemoState();
+  const email = input.value.trim();
+  demo.teamMembers = demo.teamMembers || [];
+  if (demo.teamMembers.some((member) => member.email.toLowerCase() === email.toLowerCase())) {
+    el("demo-invite-note").textContent = "That sample teammate is already in the workspace.";
+    return;
+  }
+  demo.teamMembers.push({ name: email.split("@")[0], email, role: "Dispatcher · demo" });
+  if (!saveDemoState(demo)) return;
+  input.value = "";
+  el("demo-invite-note").textContent = "Demo teammate added locally. No invitation was sent.";
+  renderDemoTeam(demo, demo.application);
+}
+
+function advanceDemoOrder(orderId) {
+  const demo = readDemoState();
+  const order = (demo.orders || []).find((item) => item.id === orderId);
+  const nextStatus = { requested: "accepted", accepted: "assigned", assigned: "picked_up", picked_up: "in_transit", in_transit: "delivered" };
+  const nextEvent = { requested: "Order accepted · sample", accepted: "Driver assigned · sample", assigned: "Pickup confirmed · sample", picked_up: "In transit · sample", in_transit: "Delivered · sample" };
+  if (!order || !nextStatus[order.status]) return;
+  const event = nextEvent[order.status];
+  order.status = nextStatus[order.status];
+  order.events.push(event);
+  if (!saveDemoState(demo)) return;
+  renderDemoOrders();
+  const updated = demo.orders.find((item) => item.id === orderId);
+  renderDemoOrderDetail(updated);
+}
+
+function toggleDemoOrderForm() {
+  const form = el("demo-new-order-form");
+  form.classList.toggle("hidden");
+  if (!form.classList.contains("hidden")) el("demo-new-customer").focus();
+}
+
+function submitDemoOrder(event) {
+  event.preventDefault();
+  const demo = readDemoState();
+  const sequence = (demo.orders || []).length + 26001;
+  const customer = el("demo-new-customer").value.trim();
+  const phone = el("demo-new-phone").value.trim();
+  const pickup = el("demo-new-pickup").value.trim();
+  const destination = el("demo-new-destination").value.trim();
+  const description = el("demo-new-description").value.trim();
+  if (!customer || !pickup || !destination || !description) return;
+  const order = {
+    id: `demo-order-${Date.now()}`,
+    reference: `DEMO-${sequence}`,
+    customer: `${customer}${phone ? ` · ${phone}` : ""} (sample)`,
+    customerPhone: phone,
+    route: `${pickup} → ${destination}`,
+    status: "requested",
+    detail: `${description} · Sample record only`,
+    events: ["Order created · sample"],
+  };
+  demo.orders = [order, ...(demo.orders || [])];
+  if (!saveDemoState(demo)) return;
+  el("demo-new-order-form").reset();
+  el("demo-new-order-form").classList.add("hidden");
+  state.demoOrderFilter = "all";
+  document.querySelectorAll("[data-order-filter]").forEach((button) =>
+    button.classList.toggle("active", button.dataset.orderFilter === "all")
+  );
+  renderDemoOrders();
+}
+
 /* ---------- boot and the configuration panel ---------- */
 
 async function boot() {
+  await loadStatus();
+  const oauthSession = consumeOAuthCallback();
   const stored = readSession();
+  if (oauthSession) {
+    if (oauthSession === "session") await continueAfterAuthentication();
+    return;
+  }
   if (stored && stored.access_token) {
     state.token = stored.access_token;
     state.session = stored;
   }
-  await loadStatus();
   if (state.token) {
     try {
-      await loadBusinesses();
-      enterWorkspace();
+      await continueAfterAuthentication();
       return;
     } catch (error) {
       banner("warn", `Stored sign-in no longer works: ${describe(error)} — sign in again.`);
       remember(null);
     }
   }
-  show(el("auth"), true);
+  show(el("landing"), true);
+  show(el("auth"), false);
+  show(el("partner-onboarding"), false);
   show(el("workspace"), false);
+  show(el("mainnav"), false);
+  show(el("signout"), false);
+}
+
+function consumeOAuthCallback() {
+  const params = new URLSearchParams(window.location.hash.slice(1));
+  const queryParams = new URLSearchParams(window.location.search);
+  const accessToken = params.get("access_token");
+  const error =
+    params.get("error_description") ||
+    params.get("error") ||
+    queryParams.get("error_description") ||
+    queryParams.get("error");
+  if (error) {
+    history.replaceState(null, "", location.pathname);
+    showAuth("signin");
+    el("auth-note").textContent = `Social sign-in was not completed: ${error}`;
+    return "error";
+  }
+  if (!accessToken) return false;
+  const claims = decodeJwtClaims(accessToken);
+  remember({
+    access_token: accessToken,
+    refresh_token: params.get("refresh_token"),
+    expires_in: Number(params.get("expires_in")) || null,
+    user_id: claims.sub || null,
+    email: claims.email || null,
+  });
+  history.replaceState(null, "", location.pathname);
+  return "session";
+}
+
+function decodeJwtClaims(token) {
+  try {
+    const payload = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(atob(payload.padEnd(Math.ceil(payload.length / 4) * 4, "=")));
+  } catch (_) {
+    return {};
+  }
+}
+
+function showAuth(mode = "signin") {
+  state.authMode = mode;
+  show(el("landing"), false);
+  show(el("auth"), true);
+  show(el("partner-onboarding"), false);
+  show(el("workspace"), false);
+  show(el("mainnav"), false);
+  show(el("signout"), false);
+  const signingUp = mode === "signup";
+  show(el("signin"), !signingUp);
+  show(el("signup"), signingUp);
+  el("password").autocomplete = signingUp ? "new-password" : "current-password";
+  el("password").value = "";
+  show(el("auth-switch"), !signingUp);
+  show(el("auth-switch-signup"), signingUp);
+  el("auth-title").textContent = signingUp ? "Create your partner account" : "Sign in to Pulse";
+  el("auth-description").textContent = signingUp
+    ? "Start with your work, company or business email. We’ll collect your organisation details next."
+    : "Use your work, company or business email address.";
+  el("auth-story-title").textContent = signingUp
+    ? "Your next delivery starts here."
+    : "Good to have you back.";
+  el("auth-story-copy").textContent = signingUp
+    ? "Create an account for your logistics business, then set up a carrier or vendor workspace."
+    : "Sign in to coordinate your workspace, follow shipments and keep your team moving.";
+  el("auth-note").textContent = "";
+}
+
+async function continueAfterAuthentication() {
+  await loadBusinesses();
+  if (!state.businesses.length) {
+    show(el("landing"), false);
+    show(el("auth"), false);
+    show(el("workspace"), false);
+    show(el("mainnav"), false);
+    show(el("signout"), true);
+    show(el("partner-onboarding"), true);
+    if (state.session && state.session.email && !el("partner-email").value) {
+      el("partner-email").value = state.session.email;
+    }
+    return;
+  }
+  show(el("partner-onboarding"), false);
+  enterWorkspace();
+}
+
+async function createPartnerWorkspace(event) {
+  event.preventDefault();
+  const name = el("partner-name").value.trim();
+  const kind = el("partner-kind").value;
+  const phone = el("partner-phone").value.trim();
+  const country = el("partner-country").value.trim().toUpperCase();
+  const currency = el("partner-currency").value.trim().toUpperCase();
+  if (kind === "vendor" && !phone) {
+    el("onboarding-note").textContent = "A vendor workspace needs a contact phone number.";
+    el("partner-phone").focus();
+    return;
+  }
+  if (!/^[A-Z]{2}$/.test(country) || !/^[A-Z]{3}$/.test(currency)) {
+    el("onboarding-note").textContent = "Enter a two-letter country code and a three-letter currency code.";
+    return;
+  }
+  const submit = el("onboarding-submit");
+  submit.disabled = true;
+  el("onboarding-note").textContent = "";
+  try {
+    const created = await api("POST", "/api/rpc/create_business", {
+      p_name: name,
+      p_city: el("partner-city").value.trim() || null,
+      p_country_code: country,
+      p_timezone: country === "NG" ? "Africa/Lagos" : "UTC",
+      p_currency: currency,
+      p_kind: kind,
+      p_phone_e164: phone || null,
+    });
+    const businessId = created && created.id;
+    const contactEmail = el("partner-email").value.trim();
+    if (businessId && contactEmail) {
+      try {
+        await api("PATCH", `/api/businesses/${encodeURIComponent(businessId)}`, {
+          email: contactEmail,
+        });
+      } catch (error) {
+        banner("warn", `Workspace created, but the business contact email was not saved: ${describe(error)}`);
+      }
+    }
+    await loadBusinesses();
+    enterWorkspace();
+  } catch (error) {
+    el("onboarding-note").textContent = describe(error);
+  } finally {
+    submit.disabled = false;
+  }
+}
+
+async function startOAuth(provider) {
+  const button = provider === "google" ? el("oauth-google") : el("oauth-microsoft");
+  button.disabled = true;
+  el("auth-note").textContent = "";
+  try {
+    const result = await api("POST", `/api/auth/oauth/${provider}`, {});
+    if (!result.authorization_url) throw new Error("The identity provider returned no sign-in URL.");
+    window.location.assign(result.authorization_url);
+  } catch (error) {
+    el("auth-note").textContent = describe(error);
+    button.disabled = false;
+  }
 }
 
 async function loadStatus() {
@@ -188,8 +1086,7 @@ async function signIn() {
   try {
     remember(await api("POST", "/api/auth/signin", { email, password }));
     el("auth-note").textContent = "";
-    await loadBusinesses();
-    enterWorkspace();
+    await continueAfterAuthentication();
   } catch (error) {
     el("auth-note").textContent = describe(error);
   } finally {
@@ -213,8 +1110,7 @@ async function signUp() {
       return;
     }
     remember(result);
-    await loadBusinesses();
-    enterWorkspace();
+    await continueAfterAuthentication();
   } catch (error) {
     el("auth-note").textContent = describe(error);
   } finally {
@@ -227,9 +1123,18 @@ function signOut() {
   state.poll = null;
   remember(null);
   state.businesses = [];
+  state.businessId = null;
+  state.business = null;
   state.board = null;
+  state.view = "dispatch";
   show(el("workspace"), false);
-  show(el("auth"), true);
+  show(el("partner-onboarding"), false);
+  show(el("mainnav"), false);
+  show(el("signout"), false);
+  show(el("business"), false);
+  show(el("whoami"), false);
+  show(el("landing"), true);
+  show(el("auth"), false);
   el("sync").textContent = "";
   banner("good", "Signed out; the token is gone from this browser.", 4000);
 }
@@ -266,7 +1171,9 @@ function currentBusiness() {
 }
 
 function enterWorkspace() {
+  show(el("landing"), false);
   show(el("auth"), false);
+  show(el("partner-onboarding"), false);
   show(el("workspace"), true);
   show(el("refresh"), true);
   show(el("signout"), true);
@@ -776,6 +1683,122 @@ async function loadDrivers() {
   }
 }
 
+async function loadCustomers(append = false) {
+  const box = el("customers-list");
+  const note = el("customers-note");
+  const more = el("customers-more");
+  if (!append) {
+    state.customers = [];
+    box.innerHTML = '<p class="muted">Loading…</p>';
+    note.textContent = "";
+  }
+  more.disabled = true;
+  const params = new URLSearchParams({
+    business_id: state.businessId || "",
+    limit: "100",
+    offset: String(append ? state.customers.length : 0),
+  });
+  const search = el("customer-search").value.trim();
+  if (search) params.set("q", search);
+  try {
+    const result = await api("GET", `/api/customers?${params.toString()}`);
+    state.customers = append
+      ? state.customers.concat(result.customers || [])
+      : result.customers || [];
+    state.customersHasMore = Boolean(result.has_more);
+    more.classList.toggle("hidden", !state.customersHasMore);
+    note.textContent = result.note || "";
+    renderCustomers();
+  } catch (error) {
+    box.innerHTML = `<p class="muted">${demoEscape(describe(error))}</p>`;
+  } finally {
+    more.disabled = false;
+  }
+}
+
+function renderCustomers() {
+  const box = el("customers-list");
+  if (!state.customers.length) {
+    box.innerHTML = '<div class="empty">No customer records match. Customer records appear through real workspace activity.</div>';
+    return;
+  }
+  const rows = state.customers.map((customer) => `<tr>
+    <td>${demoEscape(customer.display_name || "Name not recorded")}</td>
+    <td>${demoEscape(customer.phone_e164 || "—")}</td>
+    <td>${demoEscape(customer.email || "—")}</td>
+    <td>${demoEscape(customer.city || "—")}</td>
+    <td>${demoEscape(customer.source || "—")}</td>
+  </tr>`).join("");
+  box.innerHTML = `<div class="table-scroll"><table><thead><tr>
+    <th>Customer</th><th>Phone</th><th>Email</th><th>City</th><th>Record source</th>
+  </tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+async function loadFleet() {
+  const box = el("vehicles-list");
+  const form = el("vehicle-form");
+  const note = el("vehicle-note");
+  const canOperate = ["owner", "admin", "dispatcher", "ops"].includes(state.business?.my_role);
+  form.classList.toggle("hidden", !canOperate);
+  if (!canOperate) note.textContent = "Your workspace role can view fleet records but cannot register vehicles.";
+  else note.textContent = "Vehicle writes are checked by the database using your signed-in role.";
+  box.innerHTML = '<p class="muted">Loading…</p>';
+  try {
+    const result = await api(
+      "GET",
+      `/api/vehicles?business_id=${encodeURIComponent(state.businessId || "")}`
+    );
+    state.vehicles = result.vehicles || [];
+    renderFleet(result.note);
+  } catch (error) {
+    box.innerHTML = `<p class="muted">${demoEscape(describe(error))}</p>`;
+  }
+}
+
+function renderFleet(note) {
+  const box = el("vehicles-list");
+  if (!state.vehicles.length) {
+    box.innerHTML = '<div class="empty">No vehicles are registered to this workspace.</div>';
+    return;
+  }
+  const rows = state.vehicles.map((vehicle) => `<tr>
+    <td>${demoEscape(vehicle.label)}</td>
+    <td>${demoEscape(vehicle.registration || "—")}</td>
+    <td>${demoEscape(vehicle.type || "other")}</td>
+    <td>${demoEscape(vehicle.capacity_note || "—")}</td>
+    <td>${vehicle.is_active ? "active" : "inactive"}</td>
+  </tr>`).join("");
+  box.innerHTML = `<div class="table-scroll"><table><thead><tr>
+    <th>Vehicle</th><th>Registration</th><th>Type</th><th>Capacity / handling</th><th>State</th>
+  </tr></thead><tbody>${rows}</tbody></table></div><p class="note">${demoEscape(note || "")}</p>`;
+}
+
+async function createVehicle(event) {
+  event.preventDefault();
+  const form = el("vehicle-form");
+  const values = new FormData(form);
+  const note = el("vehicle-note");
+  const submit = form.querySelector('button[type="submit"]');
+  submit.disabled = true;
+  note.textContent = "Saving vehicle…";
+  try {
+    const result = await api("POST", "/api/vehicles", {
+      business_id: state.businessId,
+      label: String(values.get("label") || "").trim(),
+      registration: String(values.get("registration") || "").trim(),
+      type: String(values.get("type") || "other"),
+      capacity_note: String(values.get("capacity_note") || "").trim(),
+    });
+    form.reset();
+    await loadFleet();
+    note.textContent = `Saved ${demoEscape(result.vehicle.label)}. ${result.note || ""}`.trim();
+  } catch (error) {
+    note.textContent = describe(error);
+  } finally {
+    submit.disabled = false;
+  }
+}
+
 async function loadMembers() {
   const box = el("members-list");
   box.innerHTML = '<p class="muted">Loading…</p>';
@@ -859,10 +1882,385 @@ async function saveProfile() {
   }
 }
 
+const SHIPMENT_EVENT_TYPES = [
+  "BOOKED", "PICKED_UP", "RECEIVED_AT_FACILITY", "INSPECTED", "DEPARTED_ORIGIN",
+  "IN_TRANSIT", "ARRIVED_DESTINATION_COUNTRY", "CUSTOMS_PROCESSING",
+  "CUSTOMS_DOCUMENT_REQUIRED", "CUSTOMS_CLEARED", "RECEIVED_AT_DESTINATION_FACILITY",
+  "OUT_FOR_DELIVERY", "DELIVERY_ATTEMPTED", "DELIVERED", "EXCEPTION", "CANCELLED", "RETURNED",
+];
+
+function shipmentText(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  node.textContent = text || "";
+  return node;
+}
+
+async function loadShipments(append) {
+  const box = el("shipments-list");
+  const more = el("shipments-more");
+  const note = el("shipments-note");
+  if (!append) {
+    state.shipments = [];
+    box.replaceChildren(shipmentText("p", "muted", "Loading shipments…"));
+  }
+  const params = new URLSearchParams({
+    business_id: state.businessId || "",
+    limit: "25",
+    offset: String(state.shipments.length),
+  });
+  const query = el("shipment-search").value.trim();
+  const status = el("shipment-status").value;
+  if (query) params.set("q", query);
+  if (status) params.set("status", status);
+  try {
+    const result = await api("GET", `/api/shipments?${params.toString()}`);
+    state.shipments = append
+      ? state.shipments.concat(result.shipments || [])
+      : result.shipments || [];
+    renderShipments();
+    note.textContent = result.note || "";
+    show(more, Boolean(result.has_more));
+  } catch (error) {
+    if (!append) box.replaceChildren(shipmentText("p", "muted", describe(error)));
+    note.textContent = "Shipment data could not be loaded.";
+    show(more, false);
+  }
+}
+
+function renderShipments() {
+  const box = el("shipments-list");
+  box.replaceChildren();
+  if (!state.shipments.length) {
+    box.append(shipmentText(
+      "div",
+      "empty",
+      "No shipments are visible for this workspace yet. Visibility follows database participant policies."
+    ));
+    return;
+  }
+  for (const shipment of state.shipments) {
+    const card = document.createElement("article");
+    card.className = "shipment-card";
+    const order = shipment.order || {};
+    card.append(
+      shipmentText("h3", "", shipment.pulse_shipment_id),
+      shipmentText("span", "chip", shipment.current_status || "status unavailable"),
+      shipmentText(
+        "p",
+        "muted small",
+        [order.reference, order.pickup_text, order.destination_text].filter(Boolean).join(" · ") ||
+          "Order details are not visible to this account."
+      ),
+      shipmentText(
+        "p",
+        "small",
+        shipment.last_verified_event_at
+          ? `Last verified update · ${new Date(shipment.last_verified_event_at).toLocaleString()}`
+          : "No verified update recorded"
+      )
+    );
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "ghost";
+    open.textContent = "Open passport";
+    open.addEventListener("click", () => openShipment(shipment.id));
+    card.append(open);
+    box.append(card);
+  }
+}
+
+async function openShipment(shipmentId) {
+  try {
+    const detail = await api("GET", `/api/shipments/${encodeURIComponent(shipmentId)}`);
+    state.openShipmentId = shipmentId;
+    state.openOrderId = null;
+    openDrawer();
+    el("drawer-title").textContent = detail.shipment.pulse_shipment_id || "Shipment passport";
+    renderShipmentDetail(detail);
+  } catch (error) {
+    banner("bad", `Could not open shipment passport: ${describe(error)}`);
+    closeDrawer();
+  }
+}
+
+function renderShipmentDetail(detail) {
+  const body = el("drawer-body");
+  body.replaceChildren();
+  const { shipment, order, events } = detail;
+  const summary = document.createElement("section");
+  summary.className = "passport-summary";
+  summary.append(
+    shipmentText("h3", "", shipment.current_status || "Status unavailable"),
+    shipmentText(
+      "p",
+      "muted small",
+      order
+        ? `${order.reference} · ${order.pickup_text || "Pickup not recorded"} → ${
+            order.destination_text || "Destination not recorded"
+          }`
+        : "Order details are unavailable to this account."
+    ),
+    shipmentText(
+      "p",
+      "small",
+      shipment.last_verified_event_at
+        ? `Last verified · ${new Date(shipment.last_verified_event_at).toLocaleString()}${
+            shipment.last_verified_location ? ` · ${shipment.last_verified_location}` : ""
+          }`
+        : "Location and verified status have not been recorded."
+    )
+  );
+  body.append(summary);
+
+  const timeline = document.createElement("section");
+  timeline.className = "passport-timeline";
+  timeline.append(shipmentText("h3", "", `Event timeline (${(events || []).length})`));
+  if (!events || !events.length) {
+    timeline.append(shipmentText("p", "empty", "No shipment events have been recorded."));
+  } else {
+    const list = document.createElement("ol");
+    list.className = "event-list";
+    for (const event of events) {
+      const item = document.createElement("li");
+      item.className = "event-item";
+      const eventTime = event.occurred_at
+        ? new Date(event.occurred_at).toLocaleString()
+        : "Time not supplied";
+      item.append(
+        shipmentText("strong", "", String(event.event_type || "Event").replaceAll("_", " ")),
+        shipmentText("span", "event-verification", event.verification_status || "verification unavailable"),
+        shipmentText(
+          "p",
+          "muted small",
+          `${eventTime} · ${event.source_type || "source unavailable"}${
+            event.location ? ` · ${event.location}` : ""
+          }`
+        )
+      );
+      if (event.metadata && event.metadata.note) {
+        item.append(shipmentText("p", "small", String(event.metadata.note)));
+      }
+      list.append(item);
+    }
+    timeline.append(list);
+    if (detail.events_truncated) {
+      timeline.append(shipmentText(
+        "p",
+        "muted small",
+        "Showing the latest 500 events. Contact an administrator for older history."
+      ));
+    }
+  }
+  body.append(timeline);
+
+  const form = document.createElement("form");
+  form.className = "event-form";
+  form.append(
+    shipmentText("h3", "", "Record an operational update"),
+    shipmentText(
+      "p",
+      "muted small",
+      "Manual entries are pending review. Trusted provider or facility integrations are not enabled here."
+    )
+  );
+  const eventSelect = document.createElement("select");
+  eventSelect.setAttribute("aria-label", "Event type");
+  for (const value of SHIPMENT_EVENT_TYPES) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value.replaceAll("_", " ");
+    eventSelect.append(option);
+  }
+  const sourceSelect = document.createElement("select");
+  sourceSelect.setAttribute("aria-label", "Event source");
+  const manual = document.createElement("option");
+  manual.value = "manual";
+  manual.textContent = "manual";
+  sourceSelect.append(manual);
+  const occurred = document.createElement("input");
+  occurred.type = "datetime-local";
+  occurred.setAttribute("aria-label", "Event time");
+  occurred.value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 16);
+  const location = document.createElement("input");
+  location.maxLength = 240;
+  location.placeholder = "Location (optional)";
+  location.setAttribute("aria-label", "Event location");
+  const note = document.createElement("textarea");
+  note.rows = 2;
+  note.maxLength = 1000;
+  note.placeholder = "Note (optional)";
+  note.setAttribute("aria-label", "Event note");
+  const feedback = shipmentText("p", "note", "");
+  const submit = document.createElement("button");
+  submit.type = "submit";
+  submit.textContent = "Record event";
+  let idempotencyKey = null;
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!idempotencyKey) {
+      idempotencyKey = globalThis.crypto && globalThis.crypto.randomUUID
+        ? globalThis.crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
+    submit.disabled = true;
+    feedback.textContent = "";
+    try {
+      await api("POST", "/api/rpc/record_shipment_event", {
+        p_pulse_shipment_id: shipment.pulse_shipment_id,
+        p_event_type: eventSelect.value,
+        p_source_type: sourceSelect.value,
+        p_idempotency_key: idempotencyKey,
+        p_occurred_at: new Date(occurred.value).toISOString(),
+        p_location: location.value.trim() || null,
+        p_metadata: note.value.trim() ? { note: note.value.trim() } : {},
+      });
+      idempotencyKey = null;
+      banner("good", "Shipment event recorded.", 4000);
+      if (state.view === "shipments" && state.openShipmentId === shipment.id) {
+        await openShipment(shipment.id);
+      }
+      if (state.view === "shipments") await loadShipments(false);
+    } catch (error) {
+      feedback.textContent = describe(error);
+    } finally {
+      submit.disabled = false;
+    }
+  });
+  form.append(eventSelect, sourceSelect, occurred, location, note, submit, feedback);
+  body.append(form);
+}
+
+async function loadCarrierDirectory() {
+  const panel = el("carrier-marketplace");
+  const box = el("carriers-list");
+  const isVendor = state.business && state.business.kind === "vendor";
+  show(panel, Boolean(isVendor));
+  if (!isVendor) return;
+  box.replaceChildren(shipmentText("p", "muted", "Loading carrier directory…"));
+  const params = new URLSearchParams();
+  const search = el("carrier-search").value.trim();
+  const city = el("carrier-city").value.trim();
+  if (search) params.set("p_search", search);
+  if (city) params.set("p_city", city);
+  try {
+    const result = await api("GET", `/api/carriers?${params.toString()}`);
+    renderCarrierDirectory(result.carriers || []);
+  } catch (error) {
+    box.replaceChildren(shipmentText("p", "muted", `Carrier directory unavailable: ${describe(error)}`));
+  }
+}
+
+function renderCarrierDirectory(carriers) {
+  const box = el("carriers-list");
+  box.replaceChildren();
+  if (!carriers.length) {
+    box.append(shipmentText("div", "empty", "No carriers match. Try a different name or city."));
+    return;
+  }
+  for (const carrier of carriers) {
+    const card = document.createElement("article");
+    card.className = "carrier-card";
+    card.append(
+      shipmentText("h3", "", carrier.name || "Carrier"),
+      shipmentText(
+        "p",
+        "muted small",
+        [carrier.city, carrier.country_code].filter(Boolean).join(", ") || "Location not listed"
+      ),
+      shipmentText(
+        "p",
+        "small",
+        `${carrier.service_areas && carrier.service_areas.length
+          ? carrier.service_areas.join(", ")
+          : "Service area not listed"} · ${
+          carrier.avg_rating === null || carrier.avg_rating === undefined
+            ? "No rating history"
+            : `${carrier.avg_rating} average rating`
+        } · ${carrier.completed_orders || 0} completed orders`
+      )
+    );
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Send delivery request";
+    button.addEventListener("click", () => showOfferForm(card, carrier));
+    card.append(button);
+    box.append(card);
+  }
+}
+
+function showOfferForm(card, carrier) {
+  const existing = card.querySelector(".carrier-offer-form");
+  if (existing) {
+    existing.remove();
+    return;
+  }
+  const form = document.createElement("form");
+  form.className = "carrier-offer-form";
+  const pickup = document.createElement("input");
+  pickup.required = true;
+  pickup.minLength = 3;
+  pickup.maxLength = 500;
+  pickup.placeholder = "Pickup address";
+  const destination = document.createElement("input");
+  destination.required = true;
+  destination.minLength = 3;
+  destination.maxLength = 500;
+  destination.placeholder = "Destination address";
+  const description = document.createElement("textarea");
+  description.maxLength = 2000;
+  description.placeholder = "Parcel or delivery details (optional)";
+  const price = document.createElement("input");
+  price.type = "number";
+  price.min = "0";
+  price.step = "0.01";
+  price.placeholder = "Proposed price (optional)";
+  const feedback = shipmentText("p", "note", "");
+  const submit = document.createElement("button");
+  submit.type = "submit";
+  submit.textContent = "Send request";
+  form.append(
+    shipmentText("h4", "", `Request a quote from ${carrier.name || "this carrier"}`),
+    pickup,
+    destination,
+    description,
+    price,
+    submit,
+    feedback
+  );
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    submit.disabled = true;
+    const payload = {
+      p_carrier_business_id: carrier.id,
+      p_pickup_text: pickup.value.trim(),
+      p_destination_text: destination.value.trim(),
+      p_service_type: "delivery",
+    };
+    if (description.value.trim()) payload.p_description = description.value.trim();
+    if (price.value) payload.p_proposed_price = price.value;
+    try {
+      await api("POST", "/api/rpc/create_delivery_offer", payload);
+      banner("good", `Delivery request sent to ${carrier.name || "the carrier"}.`, 5000);
+      form.remove();
+      await loadRequests();
+    } catch (error) {
+      feedback.textContent = describe(error);
+    } finally {
+      submit.disabled = false;
+    }
+  });
+  card.append(form);
+  pickup.focus();
+}
+
 async function loadRequests() {
   const box = el("requests-list");
   const note = el("requests-note");
   const vendor = state.business && state.business.kind === "vendor";
+  await loadCarrierDirectory();
   box.innerHTML = '<p class="muted">Loading…</p>';
   try {
     const result = await api(
@@ -931,10 +2329,14 @@ function applyNavPermissions() {
   const nav = el("mainnav");
   const hidden = new Set();
   if (role === "driver") {
-    for (const view of ["orders", "drivers", "requests", "team", "settings"]) hidden.add(view);
+    for (const view of ["orders", "shipments", "drivers", "customers", "fleet", "requests", "team", "settings"]) {
+      hidden.add(view);
+    }
   }
   if (kind === "vendor") {
     hidden.add("drivers");
+    hidden.add("customers");
+    hidden.add("fleet");
     hidden.add("dispatch");
   }
   for (const button of nav.querySelectorAll("button")) {
@@ -945,9 +2347,12 @@ function applyNavPermissions() {
     }
   }
   // Never leave the user on a section that is no longer offered.
-  if (nav.querySelector(".active:not(.hidden)")) {
-    if (state.view && hidden.has(state.view)) showView("requests");
-    moveNavIndicator(nav.querySelector(".active:not(.hidden)"));
+  const active = nav.querySelector(".active:not(.hidden)");
+  if (state.view && hidden.has(state.view)) {
+    const first = nav.querySelector("button:not(.hidden)");
+    if (first) showView(first.dataset.view);
+  } else if (active) {
+    moveNavIndicator(active);
   } else {
     const first = nav.querySelector("button:not(.hidden)");
     if (first) showView(first.dataset.view);
@@ -963,6 +2368,7 @@ function closeDrawer() {
   show(el("drawer"), false);
   show(el("scrim"), false);
   state.openOrderId = null;
+  state.openShipmentId = null;
 }
 
 function moveNavIndicator(button) {
@@ -996,7 +2402,7 @@ function showView(name) {
     button.setAttribute("aria-current", on ? "page" : "false");
     if (on) active = button;
   }
-  for (const view of ["dispatch", "orders", "drivers", "requests", "team", "settings"]) {
+  for (const view of ["dispatch", "orders", "shipments", "drivers", "customers", "fleet", "requests", "team", "settings"]) {
     const node = el(`view-${view}`);
     if (view === name) reveal(node);
     else show(node, false);
@@ -1008,7 +2414,10 @@ function showView(name) {
   // Each section loads its own data the first time it is opened, so the board is
   // not waiting on drivers and members it does not need.
   if (name === "orders") loadOrdersList(false);
+  if (name === "shipments") loadShipments(false);
   if (name === "drivers") loadDrivers();
+  if (name === "customers") loadCustomers();
+  if (name === "fleet") loadFleet();
   if (name === "team") loadMembers();
   if (name === "requests") loadRequests();
   if (name === "settings") fillProfile();
@@ -1202,8 +2611,69 @@ async function verifyPayment() {
 el("signin").addEventListener("click", signIn);
 el("signup").addEventListener("click", signUp);
 el("signout").addEventListener("click", signOut);
+document.querySelectorAll("[data-demo]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const destination = button.dataset.demo;
+    if (destination === "application") startDemoApplication();
+    else if (destination === "approved-account") openApprovedDemoAccount();
+    else if (destination === "landing") showDemoScreen(null);
+    else if (["pending", "onboarding", "orders"].includes(destination)) showDemoScreen(`demo-${destination}`);
+  });
+});
+el("demo-application-form").addEventListener("submit", submitDemoApplication);
+el("setup-back").addEventListener("click", () => advanceDemoOnboarding(-1));
+el("setup-next").addEventListener("click", () => advanceDemoOnboarding(1));
+el("demo-new-order").addEventListener("click", toggleDemoOrderForm);
+el("demo-new-order-form").addEventListener("submit", submitDemoOrder);
+el("demo-cancel-new-order").addEventListener("click", () => el("demo-new-order-form").classList.add("hidden"));
+document.querySelectorAll("[data-partner-view]").forEach((button) => {
+  button.addEventListener("click", () => setDemoPartnerView(button.dataset.partnerView));
+});
+el("demo-add-driver").addEventListener("click", addDemoDriver);
+el("demo-vehicle-form").addEventListener("submit", addDemoVehicle);
+el("demo-team-invite").addEventListener("submit", addDemoTeamMember);
+el("demo-profile-save").addEventListener("click", saveDemoPartnerProfile);
+document.querySelectorAll("#demo-settings-panel input[type=checkbox]").forEach((input) => {
+  input.addEventListener("change", () => {
+    const demo = readDemoState();
+    demo.settings = {
+      orderNotifications: el("demo-setting-order-notifications").checked,
+      teamNotifications: el("demo-setting-team-notifications").checked,
+    };
+    saveDemoState(demo);
+  });
+});
+document.querySelectorAll("[data-request-filter]").forEach((button) => {
+  button.addEventListener("click", () => {
+    state.demoRequestFilter = button.dataset.requestFilter;
+    const demo = readDemoState();
+    renderDemoRequests(demo);
+  });
+});
+document.querySelectorAll("[data-order-filter]").forEach((button) => {
+  button.addEventListener("click", () => {
+    state.demoOrderFilter = button.dataset.orderFilter;
+    document.querySelectorAll("[data-order-filter]").forEach((filterButton) =>
+      filterButton.classList.toggle("active", filterButton === button)
+    );
+    renderDemoOrders();
+  });
+});
+document.querySelectorAll("[data-open-auth]").forEach((button) => {
+  button.addEventListener("click", () => showAuth(button.dataset.openAuth));
+});
+el("auth-back").addEventListener("click", () => {
+  show(el("auth"), false);
+  show(el("landing"), true);
+});
+el("oauth-google").addEventListener("click", () => startOAuth("google"));
+el("oauth-microsoft").addEventListener("click", () => startOAuth("microsoft"));
+el("onboarding-form").addEventListener("submit", createPartnerWorkspace);
+el("partner-kind").addEventListener("change", (event) => {
+  el("partner-phone").required = event.target.value === "vendor";
+});
 el("password").addEventListener("keydown", (event) => {
-  if (event.key === "Enter") signIn();
+  if (event.key === "Enter") state.authMode === "signup" ? signUp() : signIn();
 });
 el("refresh").addEventListener("click", () => loadBoard());
 el("create").addEventListener("click", createOrder);
@@ -1239,6 +2709,28 @@ document.addEventListener("keydown", (event) => {
 });
 el("osearch").addEventListener("click", () => loadOrdersList(false));
 el("omore").addEventListener("click", () => loadOrdersList(true));
+el("shipment-search-button").addEventListener("click", () => loadShipments(false));
+el("shipment-refresh").addEventListener("click", () => loadShipments(false));
+el("shipments-more").addEventListener("click", () => loadShipments(true));
+el("shipment-status").addEventListener("change", () => loadShipments(false));
+el("shipment-search").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") loadShipments(false);
+});
+el("carrier-search-button").addEventListener("click", loadCarrierDirectory);
+el("carrier-search").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") loadCarrierDirectory();
+});
+el("carrier-city").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") loadCarrierDirectory();
+});
+el("customer-search-button").addEventListener("click", loadCustomers);
+el("customer-refresh").addEventListener("click", loadCustomers);
+el("customers-more").addEventListener("click", () => loadCustomers(true));
+el("customer-search").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") loadCustomers();
+});
+el("fleet-refresh").addEventListener("click", loadFleet);
+el("vehicle-form").addEventListener("submit", createVehicle);
 el("create2").addEventListener("click", createOrder);
 el("b-save").addEventListener("click", saveProfile);
 
@@ -1253,7 +2745,12 @@ el("business").addEventListener("change", (event) => {
   localStorage.setItem("pulse.business", state.businessId);
   state.openOrderId = null;
   closeDrawer();
+  state.business = currentBusiness();
+  const previousView = state.view;
+  applyNavPermissions();
   loadBoard();
+  if (state.view === previousView && state.view === "shipments") loadShipments(false);
+  if (state.view === previousView && state.view === "requests") loadRequests();
 });
 
 el("filter").addEventListener("change", (event) => {
@@ -1262,4 +2759,3 @@ el("filter").addEventListener("change", (event) => {
 });
 
 boot();
-

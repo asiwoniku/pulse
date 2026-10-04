@@ -3,7 +3,11 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Pulse · Partner portal</title>
+    <meta
+      name="description"
+      content="Pulse connects logistics partners with the tools to coordinate delivery, track shipments, and build a trusted record."
+    />
+    <title>Pulse · Logistics, in sync</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -11,7 +15,7 @@
       <div class="brand">
         <span class="dot"></span>
         <strong>Pulse</strong>
-        <span class="muted">partner portal</span>
+        <span class="brand-caption">Logistics, in sync</span>
       </div>
       <div class="bar-right">
         <select id="business" class="hidden" aria-label="Workspace"></select>
@@ -27,7 +31,10 @@
       <span class="nav-indicator" aria-hidden="true"></span>
       <button data-view="dispatch" class="active" type="button">Dispatch</button>
       <button data-view="orders" type="button">Orders</button>
+      <button data-view="shipments" type="button">Shipments</button>
       <button data-view="drivers" type="button">Drivers</button>
+      <button data-view="customers" type="button">Customers</button>
+      <button data-view="fleet" type="button">Fleet</button>
       <button data-view="requests" type="button">Requests</button>
       <button data-view="team" type="button">Team</button>
       <button data-view="settings" type="button">Settings</button>
@@ -36,22 +43,236 @@
     <div id="banners"></div>
 
     <main>
-      <section id="auth" class="panel narrow">
-        <h2>Sign in</h2>
-        <p class="muted">
-          Same account as the mobile app. This portal has no separate user table and
-          no shared demo login: every read is filtered by row-level security using
-          your own token.
-        </p>
-        <label>Email <input id="email" type="email" autocomplete="username" /></label>
-        <label>Password
-          <input id="password" type="password" autocomplete="current-password" />
-        </label>
-        <div class="row">
-          <button id="signin" type="button">Sign in</button>
-          <button id="signup" class="ghost" type="button">Create account</button>
+      <section id="landing" class="landing">
+        <div class="landing-topline">
+          <span class="eyebrow"><span class="live-dot"></span> A clearer way to move goods</span>
+          <button class="text-button" type="button" data-open-auth="signin">Partner sign in <span aria-hidden="true">↗</span></button>
         </div>
-        <p id="auth-note" class="note"></p>
+        <div class="hero">
+          <div class="hero-copy">
+            <p class="eyebrow">The logistics partner platform</p>
+            <h1>Every handoff.<br /><span>In sync.</span></h1>
+            <p class="hero-intro">
+              Bring delivery teams, vendors and shipment updates together in one clear
+              workspace — from the first booking to proof of delivery.
+            </p>
+            <div class="hero-actions">
+              <button class="button-large" type="button" data-open-auth="signup">Become a Pulse partner <span aria-hidden="true">→</span></button>
+              <a class="secondary-link" href="#how-it-works">See how Pulse works <span aria-hidden="true">↓</span></a>
+            </div>
+            <p class="hero-footnote">For logistics businesses and delivery partners. Customer accounts are not created on this website.</p>
+            <div class="demo-entry">
+              <span>While live services are being connected:</span>
+              <button class="text-button" type="button" data-demo="application">Explore partner application <span aria-hidden="true">→</span></button>
+              <button class="text-button" type="button" data-demo="approved-account">Preview approved partner account <span aria-hidden="true">→</span></button>
+            </div>
+          </div>
+          <div class="hero-art" aria-label="Illustration of a delivery truck moving along a connected shipment route" role="img">
+            <svg class="route-art" viewBox="0 0 660 500" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <defs>
+                <linearGradient id="route-gradient" x1="112" y1="352" x2="515" y2="120" gradientUnits="userSpaceOnUse">
+                  <stop stop-color="#2BC5B4" />
+                  <stop offset="1" stop-color="#4A75FF" />
+                </linearGradient>
+                <filter id="card-shadow" x="0" y="0" width="1" height="1" color-interpolation-filters="sRGB">
+                  <feGaussianBlur stdDeviation="14" />
+                </filter>
+              </defs>
+              <circle cx="340" cy="248" r="205" fill="#E9F4F3" />
+              <path d="M92 332C157 332 151 235 224 235C291 235 283 337 359 337C429 337 410 157 501 157C547 157 551 193 575 193" stroke="#B8D9D8" stroke-width="2" stroke-dasharray="4 9" />
+              <path class="route-dash" d="M92 332C157 332 151 235 224 235C291 235 283 337 359 337C429 337 410 157 501 157C547 157 551 193 575 193" stroke="url(#route-gradient)" stroke-width="4" stroke-linecap="round" stroke-dasharray="8 11" />
+              <circle cx="92" cy="332" r="12" fill="#fff" stroke="#20B5A8" stroke-width="5" />
+              <circle cx="224" cy="235" r="9" fill="#fff" stroke="#20B5A8" stroke-width="4" />
+              <circle cx="359" cy="337" r="9" fill="#fff" stroke="#4A75FF" stroke-width="4" />
+              <circle cx="501" cy="157" r="12" fill="#fff" stroke="#4A75FF" stroke-width="5" />
+              <g class="floating-card shipment-card-art">
+                <rect x="349" y="56" width="224" height="102" rx="18" fill="#112A3A" />
+                <circle cx="379" cy="88" r="12" fill="#25C5B4" />
+                <path d="M374 88L378 92L385 84" stroke="#102B3B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+                <text x="402" y="87" fill="#8CA5B2" font-size="11" font-family="system-ui">EVENT TIMELINE</text>
+                <text x="374" y="121" fill="white" font-size="14" font-weight="650" font-family="system-ui">Source-aware updates</text>
+                <text x="374" y="141" fill="#8CA5B2" font-size="11" font-family="system-ui">Verified · pending review</text>
+              </g>
+              <g class="floating-card route-card-art">
+                <rect x="38" y="104" width="180" height="80" rx="16" fill="white" />
+                <circle cx="64" cy="144" r="14" fill="#E4F7F4" />
+                <path d="M59 144L63 148L70 139" stroke="#17A99D" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+                <text x="88" y="139" fill="#70838C" font-size="10" font-family="system-ui">PARTNER NETWORK</text>
+                <text x="88" y="158" fill="#112A3A" font-size="13" font-weight="650" font-family="system-ui">Connected</text>
+              </g>
+              <g class="truck-art">
+                <rect x="202" y="276" width="136" height="72" rx="13" fill="#122E40" />
+                <path d="M338 297H383L414 328V348H338V297Z" fill="#2BC5B4" />
+                <path d="M355 307H378L397 327H355V307Z" fill="#D6F5F1" />
+                <rect x="217" y="290" width="67" height="10" rx="5" fill="#2B5062" />
+                <rect x="217" y="309" width="49" height="7" rx="3.5" fill="#2B5062" />
+                <text x="218" y="336" fill="white" font-size="11" font-weight="700" letter-spacing="1.2" font-family="system-ui">PULSE</text>
+                <circle cx="250" cy="350" r="17" fill="#112A3A" />
+                <circle cx="250" cy="350" r="7" fill="#D6E7E9" />
+                <circle cx="379" cy="350" r="17" fill="#112A3A" />
+                <circle cx="379" cy="350" r="7" fill="#D6E7E9" />
+              </g>
+              <g class="floating-card proof-card-art">
+                <rect x="438" y="359" width="174" height="78" rx="16" fill="white" />
+                <rect x="458" y="379" width="36" height="36" rx="11" fill="#FFF1E7" />
+                <path d="M468 397L475 404L486 389" stroke="#E98647" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+                <text x="506" y="390" fill="#70838C" font-size="10" font-family="system-ui">HANDOFF HISTORY</text>
+                <text x="506" y="410" fill="#112A3A" font-size="12" font-weight="650" font-family="system-ui">Kept with its source</text>
+              </g>
+            </svg>
+            <span class="art-caption"><span></span> One shipment record. Every partner in view.</span>
+          </div>
+        </div>
+        <div class="trust-strip" aria-label="Pulse platform principles">
+          <span><b>01</b> Coordinate handoffs</span>
+          <span><b>02</b> Follow shipment events</span>
+          <span><b>03</b> Keep an accountable record</span>
+        </div>
+        <section id="how-it-works" class="landing-details">
+          <div class="section-heading">
+            <p class="eyebrow">Made for the real work</p>
+            <h2>Less chasing updates.<br /><span>More connected operations.</span></h2>
+          </div>
+          <div class="feature-grid">
+            <article class="feature-card"><span class="feature-icon aqua">↗</span><h3>Coordinate your network</h3><p>Connect vendors, carriers and operations teams around real delivery work and clear handoffs.</p></article>
+            <article class="feature-card"><span class="feature-icon blue">◎</span><h3>See the shipment journey</h3><p>Follow status and source-aware events in a shared shipment passport, as records become available.</p></article>
+            <article class="feature-card"><span class="feature-icon orange">✓</span><h3>Keep the record straight</h3><p>Distinguish verified system updates from partner-reported information that still needs review.</p></article>
+          </div>
+        </section>
+        <section class="audience-band">
+          <div><p class="eyebrow">For logistics partners</p><h2>Bring your operation into sync.</h2><p>Carriers and vendors can create a business workspace and invite their team.</p></div>
+          <button class="button-large light-button" type="button" data-open-auth="signup">Create a partner account <span aria-hidden="true">→</span></button>
+        </section>
+        <p class="customer-note">Looking for a delivery? Pulse customer access is through the mobile experience. This website is for partner businesses.</p>
+      </section>
+
+      <section id="auth" class="auth-screen hidden">
+        <div class="auth-story">
+          <button class="back-link" type="button" id="auth-back"><span aria-hidden="true">←</span> Back to Pulse</button>
+          <div class="auth-story-copy"><p class="eyebrow">PULSE PARTNER NETWORK</p><h1 id="auth-story-title">Good to have you back.</h1><p id="auth-story-copy">Sign in to coordinate your workspace, follow shipments and keep your team moving.</p></div>
+          <div class="auth-route-mark" aria-hidden="true"><span></span><span></span><span></span><i></i></div>
+          <p class="auth-story-foot">One connected record from pickup to proof of delivery.</p>
+        </div>
+        <div class="auth-card">
+          <p class="eyebrow" id="auth-eyebrow">PARTNER WORKSPACE</p>
+          <h2 id="auth-title">Sign in to Pulse</h2>
+          <p class="auth-description" id="auth-description">Use your work, company or business email address.</p>
+          <div class="oauth-actions">
+            <button id="oauth-google" class="oauth-button" type="button"><span class="google-mark" aria-hidden="true">G</span> Continue with Google</button>
+            <button id="oauth-microsoft" class="oauth-button" type="button"><span class="microsoft-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span> Continue with Microsoft</button>
+          </div>
+          <div class="auth-divider"><span>or use email</span></div>
+          <label>Email address <input id="email" type="email" autocomplete="username" placeholder="you@company.com" /></label>
+          <label>Password <input id="password" type="password" autocomplete="current-password" placeholder="At least 6 characters" /></label>
+          <p class="email-assurance">Business email domains are welcome. You can use your company email for your workspace contact as well.</p>
+          <button id="signin" class="auth-submit" type="button">Sign in</button>
+          <button id="signup" class="auth-submit hidden" type="button">Create partner account</button>
+          <p id="auth-note" class="note" aria-live="polite"></p>
+          <p class="auth-switch" id="auth-switch">New to Pulse? <button type="button" data-open-auth="signup">Create a partner account</button></p>
+          <p class="auth-switch hidden" id="auth-switch-signup">Already registered? <button type="button" data-open-auth="signin">Sign in</button></p>
+          <p class="auth-legal">By continuing, you agree to use Pulse for authorised business operations. Partner workspace access is governed by your organisation’s permissions.</p>
+          <div class="demo-auth-entry"><span>Just exploring?</span><button type="button" data-demo="application">Try the clearly labelled demo</button></div>
+        </div>
+      </section>
+
+      <section id="demo-application" class="demo-screen hidden">
+        <div class="demo-topline"><span class="demo-pill">DEMO · NO LIVE APPLICATION</span><button class="text-button" type="button" data-demo="landing">Back to landing</button></div>
+        <div class="demo-form-layout">
+          <div class="demo-intro"><p class="eyebrow">PARTNER APPLICATION</p><h1>Introduce your business.</h1><p>In the live product, these details help Pulse identify the organisation and the person authorised to represent it. This preview uses sample information only.</p><ol class="application-steps"><li class="current"><b>01</b> Business details</li><li><b>02</b> Identity & evidence</li><li><b>03</b> Admin review</li></ol></div>
+          <form id="demo-application-form" class="demo-card">
+            <div class="demo-card-heading"><div><p class="eyebrow">STEP 1 OF 2</p><h2>Business & representative</h2></div><span class="demo-lock">Sample data only</span></div>
+            <p class="auth-description">No real ID, certificate, password or sensitive personal information should be entered here.</p>
+            <div class="row two demo-form-row">
+              <label>Legal business name <input id="demo-company" required value="Harbourline Logistics (Demo)" /></label>
+              <label>Partner type<select id="demo-kind"><option value="carrier">Carrier · delivers shipments</option><option value="vendor">Vendor · requests delivery</option></select></label>
+            </div>
+            <div class="row two demo-form-row">
+              <label>Authorised representative <input id="demo-representative" required value="Ada Okafor (Demo)" /></label>
+              <label>Business email <input id="demo-email" type="email" required value="ada@harbourline.example" /></label>
+            </div>
+            <div class="row two demo-form-row">
+              <label>Business phone <input id="demo-phone" required value="+234 800 000 0101" /></label>
+              <label>Operating city <input id="demo-city" required value="Lagos" /></label>
+            </div>
+            <div class="demo-evidence">
+              <div><span class="evidence-symbol">01</span><span><b>Business registration</b><small>Sample reference · not a real certificate</small></span><span class="demo-status sample">Sample</span></div>
+              <div><span class="evidence-symbol">02</span><span><b>Representative identity</b><small>Sample reference · no ID image is stored</small></span><span class="demo-status sample">Sample</span></div>
+              <div><span class="evidence-symbol">03</span><span><b>Business address evidence</b><small>Sample reference · not independently checked</small></span><span class="demo-status sample">Sample</span></div>
+            </div>
+            <label class="demo-consent"><input id="demo-confirm" type="checkbox" required /><span>I understand this is a product demonstration using fictional sample details, not an application or identity check.</span></label>
+            <p id="demo-application-note" class="onboarding-note" aria-live="polite"></p>
+            <button class="auth-submit" type="submit">Submit sample application for review <span aria-hidden="true">→</span></button>
+          </form>
+        </div>
+      </section>
+
+      <section id="demo-pending" class="demo-screen hidden">
+        <div class="demo-topline"><span class="demo-pill">DEMO APPLICATION</span><button class="text-button" type="button" data-demo="landing">Exit preview</button></div>
+        <div class="status-page">
+          <div class="status-illustration"><span class="status-orbit"></span><span class="status-check">◷</span><i></i></div>
+          <p class="eyebrow">APPLICATION RECEIVED · DEMO ONLY</p>
+          <h1 id="demo-pending-title">Your application is in review.</h1>
+          <p id="demo-pending-copy">A Pulse administrator would review the submitted business details and evidence before a partner workspace is activated. No verification has taken place in this demo.</p>
+          <div class="review-progress"><span class="done"><i>✓</i> Application submitted</span><span class="active"><i>02</i> Administrator review</span><span><i>03</i> Partner setup</span></div>
+          <div id="demo-pending-decision" class="decision-card"></div>
+          <div class="row status-actions"><button class="ghost" type="button" data-demo="application">Edit and resubmit sample application</button></div>
+        </div>
+        </section>
+
+      <section id="demo-onboarding" class="demo-screen hidden">
+        <div class="demo-topline"><span class="demo-pill">DEMO · ADMIN APPROVED SAMPLE</span><button class="text-button" type="button" data-demo="orders">Open partner workspace</button></div>
+        <div class="partner-welcome"><div class="welcome-copy"><p class="eyebrow">WELCOME TO PULSE PARTNERS</p><h1>Your application is approved.<br /><span>Let’s get you ready.</span></h1><p>This is the partner experience after an administrator approves the sample application. Approval here is only a browser demo decision.</p><div class="verified-banner"><span>✓</span><div><b>Sample application approved</b><small>Demo decision · not a real-world identity or company verification</small></div></div></div><div class="welcome-route" aria-hidden="true"><span>Application</span><i></i><span>Review</span><i></i><span>Workspace</span></div></div>
+        <div class="onboarding-progress"><span class="active">01 <b>Business profile</b></span><i></i><span>02 <b>Services & coverage</b></span><i></i><span>03 <b>Team & ready</b></span></div>
+        <div class="partner-setup-grid">
+          <section class="setup-panel"><p class="eyebrow" id="setup-step-label">STEP 1 OF 3</p><h2 id="setup-step-title">Confirm your business profile</h2><p id="setup-step-description" class="muted">Review the business details from your sample application.</p><div id="setup-step-content"></div><div class="row setup-controls"><button id="setup-back" class="ghost hidden" type="button">Back</button><button id="setup-next" type="button">Continue</button></div></section>
+          <aside class="setup-checklist"><h3>Your launch checklist</h3><div id="setup-checklist-items"></div><p>Real payments, identity evidence, insurance and regulated services require separate configuration and review. They are not activated by completing this demo.</p></aside>
+        </div>
+      </section>
+
+      <section id="demo-orders" class="demo-screen hidden">
+        <div class="demo-topline"><span class="demo-pill">APPROVED PARTNER · DEMO ACCOUNT</span><div class="demo-partner-tools"><span id="demo-workspace-name"></span><button class="ghost" type="button" data-demo="onboarding">Setup checklist</button><button class="text-button" type="button" data-demo="landing">Exit demo</button></div></div>
+        <div class="orders-welcome"><div><p class="eyebrow"><span class="status-live-dot"></span> PARTNER WORKSPACE · APPROVED DEMO</p><h1>Good morning, <span id="demo-greeting-name">Ada</span>.</h1><p>Your workspace is ready. Here’s what’s happening across your delivery operation.</p></div><button id="demo-new-order" class="button-large" type="button">＋ New sample order</button></div>
+        <div class="demo-warning compact"><b>DEMO DATA</b><span>These example orders are fictional and are not connected to Supabase or any carrier.</span></div>
+        <div id="demo-page-loading" class="demo-page-loading hidden" role="status" aria-live="polite"><span class="upload-spinner"></span><span><b>Getting your workspace ready</b><small>Preparing fictional sample activity…</small></span></div>
+        <nav class="demo-partner-nav" aria-label="Partner workspace sections"><button class="active" type="button" data-partner-view="overview">Dispatch</button><button type="button" data-partner-view="orders">Orders</button><button type="button" data-partner-view="shipments">Shipments</button><button type="button" data-partner-view="drivers">Drivers</button><button type="button" data-partner-view="customers">Customers</button><button type="button" data-partner-view="fleet">Fleet</button><button type="button" data-partner-view="requests">Requests</button><button type="button" data-partner-view="team">Team</button><button type="button" data-partner-view="settings">Settings</button></nav>
+        <div class="order-summary-cards"><article><span>Active orders</span><b id="demo-active-orders">0</b><small>Across all sample statuses</small></article><article><span>In transit</span><b id="demo-in-transit">0</b><small>Sample shipments</small></article><article><span>Delivered this week</span><b id="demo-delivered">0</b><small>Example only</small></article></div>
+        <section id="demo-overview-panel" class="demo-partner-panel demo-overview-panel">
+          <div class="overview-grid">
+            <article class="overview-card activity-card"><div class="demo-orders-heading"><div><h2>Latest activity</h2><p>Updates from your sample order timeline</p></div><span class="sample-live-label"><i></i> SAMPLE LIVE FEED</span></div><div id="demo-activity-feed" class="demo-activity-feed"></div></article>
+            <article class="overview-card performance-card"><p class="eyebrow">THIS WEEK · EXAMPLE ONLY</p><h2>Delivery pulse</h2><div class="delivery-chart" aria-label="Illustrative sample delivery activity"><span style="--bar-height:38%"><i>M</i></span><span style="--bar-height:62%"><i>T</i></span><span style="--bar-height:48%"><i>W</i></span><span style="--bar-height:82%"><i>T</i></span><span style="--bar-height:68%"><i>F</i></span><span style="--bar-height:92%"><i>S</i></span><span style="--bar-height:55%"><i>S</i></span></div><div class="chart-caption"><b>On track</b><span>Illustrative data · not a KPI</span></div></article>
+            <article class="overview-card quick-actions-card"><p class="eyebrow">QUICK ACTIONS</p><h2>Keep work moving</h2><button type="button" data-partner-view="orders">Review active orders <span>→</span></button><button type="button" data-partner-view="requests">Review delivery requests <span>→</span></button><button type="button" data-partner-view="team">Manage your team <span>→</span></button></article>
+          </div>
+        </section>
+        <section id="demo-orders-panel" class="demo-partner-panel demo-orders-panel hidden"><div class="demo-orders-heading"><div><h2>Orders</h2><p>Sample workflow · select an order to see its event trail.</p></div><div class="demo-order-filters"><button class="active" data-order-filter="all" type="button">All</button><button data-order-filter="active" type="button">Active</button><button data-order-filter="delivered" type="button">Delivered</button></div></div><form id="demo-new-order-form" class="demo-new-order-form hidden"><div class="demo-orders-heading"><div><h3>Create a sample delivery</h3><p>Fictional order only · no customer or carrier will be contacted.</p></div><button id="demo-cancel-new-order" class="ghost" type="button">Cancel</button></div><div class="demo-new-order-fields"><label>Customer name<input id="demo-new-customer" required placeholder="Customer or business" /></label><label>Contact phone<input id="demo-new-phone" type="tel" placeholder="+234…" /></label><label>Pickup address<input id="demo-new-pickup" required placeholder="Pickup location" /></label><label>Delivery address<input id="demo-new-destination" required placeholder="Destination" /></label><label class="wide-field">Order description<input id="demo-new-description" required placeholder="Packages, notes or handling instructions" /></label></div><button type="submit">Create demo order</button></form><div id="demo-orders-list"></div></section>
+        <section id="demo-shipments-panel" class="demo-partner-panel demo-orders-panel hidden"><div class="demo-orders-heading"><div><h2>Shipment activity</h2><p>Every displayed event belongs to a fictional sample order.</p></div></div><div id="demo-shipments-list" class="demo-activity-feed"></div></section>
+        <section id="demo-drivers-panel" class="demo-partner-panel demo-orders-panel hidden"><div class="demo-orders-heading"><div><h2>Driver network</h2><p>Availability and performance are illustrative demo data.</p></div><button id="demo-add-driver" type="button">＋ Add sample driver</button></div><div id="demo-drivers-list" class="demo-driver-grid"></div></section>
+        <section id="demo-customers-panel" class="demo-partner-panel demo-orders-panel hidden"><div class="demo-orders-heading"><div><h2>Customers</h2><p>Sample contact details derived from fictional demo orders.</p></div></div><div id="demo-customers-list" class="demo-request-list"></div></section>
+        <section id="demo-fleet-panel" class="demo-partner-panel demo-orders-panel hidden"><div class="demo-orders-heading"><div><h2>Fleet</h2><p>Sample vehicles only · no real driver or vehicle records are changed.</p></div></div><div id="demo-fleet-list" class="demo-request-list"></div><form id="demo-vehicle-form" class="demo-invite-form"><label for="demo-vehicle-label">Add sample vehicle</label><div class="demo-new-order-fields"><input id="demo-vehicle-label" required maxlength="80" placeholder="Vehicle label" /><input id="demo-vehicle-registration" maxlength="64" placeholder="Registration (optional)" /><select id="demo-vehicle-type"><option value="motorbike">Motorbike</option><option value="tricycle">Tricycle</option><option value="van">Van</option><option value="truck">Truck</option><option value="bicycle">Bicycle</option><option value="other">Other</option></select><input id="demo-vehicle-capacity" maxlength="200" placeholder="Capacity / handling notes" /></div><button type="submit">Add demo vehicle</button><p id="demo-vehicle-note" aria-live="polite">Saved to this browser's demo data only.</p></form></section>
+        <section id="demo-requests-panel" class="demo-partner-panel demo-orders-panel hidden"><div class="demo-orders-heading"><div><h2>Delivery requests</h2><p>Review sample work from partner businesses. Accepting changes only this demo.</p></div><div class="demo-order-filters"><button class="active" type="button" data-request-filter="all">All</button><button type="button" data-request-filter="open">Open</button><button type="button" data-request-filter="accepted">Accepted</button></div></div><div id="demo-requests-list" class="demo-request-list"></div></section>
+        <section id="demo-team-panel" class="demo-partner-panel demo-orders-panel hidden"><div class="demo-orders-heading"><div><h2>Your team</h2><p>Demo members only. Invitations are not sent.</p></div></div><div id="demo-team-list"></div><form id="demo-team-invite" class="demo-invite-form"><label for="demo-invite-email">Invite by business email</label><div><input id="demo-invite-email" type="email" placeholder="colleague@company.example" required /><button type="submit">Add demo teammate</button></div><p id="demo-invite-note" aria-live="polite">No invitation email will be sent.</p></form></section>
+        <section id="demo-settings-panel" class="demo-partner-panel demo-orders-panel hidden"><div class="demo-orders-heading"><div><h2>Workspace settings</h2><p>Manage your fictional business profile and demo preferences.</p></div><button id="demo-profile-save" type="button">Save changes</button></div><div class="demo-profile-fields"><label>Business name<input id="demo-profile-name" /></label><label>Business email<input id="demo-profile-email" type="email" /></label><label>Business phone<input id="demo-profile-phone" type="tel" /></label><label>Operating city<input id="demo-profile-city" /></label><label>Service coverage<input id="demo-profile-areas" /></label></div><p id="demo-profile-note" class="demo-inline-note" aria-live="polite"></p><div class="demo-settings-group"><h3>Notifications</h3><label class="demo-setting-row"><span><b>Order status updates</b><small>Show in-app activity for sample orders</small></span><input type="checkbox" id="demo-setting-order-notifications" checked /></label><label class="demo-setting-row"><span><b>Team activity</b><small>Show changes from demo team members</small></span><input type="checkbox" id="demo-setting-team-notifications" checked /></label></div><div class="demo-settings-group"><h3>Workspace information</h3><p>Workspace ID <code>DEMO-HARBOURLINE-01</code></p><p>Partner status <span class="demo-status approved">Approved · demo only</span></p><p>Data storage <code>Browser storage · local to this device</code></p></div></section>
+        <div id="demo-order-detail" class="demo-order-detail hidden"></div>
+      </section>
+
+      <section id="partner-onboarding" class="onboarding-screen hidden">
+        <div class="onboarding-aside"><p class="eyebrow">STEP 2 · YOUR WORKSPACE</p><h1>Let’s get your operation set up.</h1><p>Tell us a little about your business. You’ll become its owner and can invite teammates once you’re in.</p><div class="setup-route" aria-hidden="true"><span>Business profile</span><i></i><span>Partner workspace</span></div></div>
+        <form id="onboarding-form" class="onboarding-card">
+          <p class="eyebrow">PARTNER DETAILS</p><h2>About your business</h2><p class="auth-description">Use the details partners should use to identify and contact your organisation.</p>
+          <label>Business name <input id="partner-name" required minlength="2" maxlength="120" autocomplete="organization" placeholder="Your company name" /></label>
+          <label>Partner type<select id="partner-kind"><option value="carrier">Carrier · fulfils deliveries</option><option value="vendor">Vendor · sends delivery requests</option></select></label>
+          <div class="row two onboarding-row">
+            <label>Business contact phone <input id="partner-phone" type="tel" placeholder="+234…" /></label>
+            <label>City <input id="partner-city" autocomplete="address-level2" placeholder="Lagos" /></label>
+          </div>
+          <label>Business contact email <input id="partner-email" type="email" autocomplete="email" placeholder="operations@company.com" /></label>
+          <div class="row two onboarding-row">
+            <label>Country code <input id="partner-country" required minlength="2" maxlength="2" value="NG" /></label>
+            <label>Currency <input id="partner-currency" required minlength="3" maxlength="3" value="NGN" /></label>
+          </div>
+          <p class="onboarding-note" id="onboarding-note" aria-live="polite"></p>
+          <button id="onboarding-submit" class="auth-submit" type="submit">Create partner workspace</button>
+          <p class="auth-legal">Your account email and business contact email can be different. Pulse uses your signed-in account to enforce workspace permissions.</p>
+        </form>
       </section>
 
       <section id="workspace" class="hidden">
@@ -97,10 +318,96 @@
           </div>
         </section>
 
+        <section class="view hidden" id="view-shipments">
+          <div class="panel">
+            <div class="toolbar">
+              <div>
+                <h2>Shipment passports</h2>
+                <p class="muted small">Canonical shipment identity and source-aware event history.</p>
+              </div>
+              <div class="toolbar-controls">
+                <input id="shipment-search" type="search" placeholder="Pulse shipment ID" aria-label="Search shipment ID" />
+                <select id="shipment-status" aria-label="Filter shipments by status">
+                  <option value="">All statuses</option>
+                  <option value="requested">Requested</option>
+                  <option value="accepted">Accepted</option>
+                  <option value="assigned">Assigned</option>
+                  <option value="picked_up">Picked up</option>
+                  <option value="in_transit">In transit</option>
+                  <option value="delivered">Delivered</option>
+                  <option value="cancelled">Cancelled</option>
+                  <option value="returned">Returned</option>
+                </select>
+                <button id="shipment-search-button" type="button">Search</button>
+                <button id="shipment-refresh" class="ghost" type="button">Refresh</button>
+              </div>
+            </div>
+            <p class="note" id="shipments-note"></p>
+            <div id="shipments-list" class="shipment-grid"></div>
+            <div class="row">
+              <button id="shipments-more" class="ghost hidden" type="button">Load more</button>
+            </div>
+          </div>
+        </section>
+
         <section class="view hidden" id="view-drivers">
           <div class="panel">
             <div class="toolbar"><h2>Drivers</h2></div>
             <div id="drivers-list"></div>
+          </div>
+        </section>
+
+        <section class="view hidden" id="view-customers">
+          <div class="panel">
+            <div class="toolbar">
+              <div>
+                <h2>Customers</h2>
+                <p class="muted small">Contact records belonging to this workspace.</p>
+              </div>
+              <div class="toolbar-controls">
+                <input id="customer-search" type="search" placeholder="Name, phone or email" aria-label="Search customers" />
+                <button id="customer-search-button" type="button">Search</button>
+                <button id="customer-refresh" class="ghost" type="button">Refresh</button>
+              </div>
+            </div>
+            <p class="note" id="customers-note" aria-live="polite"></p>
+            <div id="customers-list"></div>
+            <button id="customers-more" class="ghost hidden" type="button">Load more customers</button>
+          </div>
+        </section>
+
+        <section class="view hidden" id="view-fleet">
+          <div class="panel">
+            <div class="toolbar">
+              <div>
+                <h2>Fleet</h2>
+                <p class="muted small">Vehicles registered to this workspace.</p>
+              </div>
+              <button id="fleet-refresh" class="ghost" type="button">Refresh</button>
+            </div>
+            <form id="vehicle-form" class="vehicle-form">
+              <h3>Register a vehicle</h3>
+              <div class="row two">
+                <label>Vehicle label <input name="label" required minlength="2" maxlength="80" placeholder="Van 04" /></label>
+                <label>Registration <input name="registration" maxlength="64" placeholder="Optional" /></label>
+              </div>
+              <div class="row two">
+                <label>Type
+                  <select name="type">
+                    <option value="motorbike">Motorbike</option>
+                    <option value="tricycle">Tricycle</option>
+                    <option value="van">Van</option>
+                    <option value="truck">Truck</option>
+                    <option value="bicycle">Bicycle</option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+                <label>Capacity / handling notes <input name="capacity_note" maxlength="200" placeholder="Optional" /></label>
+              </div>
+              <button type="submit">Save vehicle</button>
+              <p class="note" id="vehicle-note" aria-live="polite"></p>
+            </form>
+            <div id="vehicles-list"></div>
           </div>
         </section>
 <!-- The multi-operator surface: who is in this workspace, and with what
@@ -136,8 +443,22 @@
         </section>
 
         <section class="view hidden" id="view-requests">
+          <div class="panel" id="carrier-marketplace">
+            <div class="toolbar">
+              <div>
+                <h2>Find a carrier</h2>
+                <p class="muted small">Browse the live partner directory. No carrier results are fabricated.</p>
+              </div>
+              <div class="toolbar-controls">
+                <input id="carrier-search" type="search" placeholder="Carrier name" aria-label="Search carriers" />
+                <input id="carrier-city" type="search" placeholder="City" aria-label="Filter carriers by city" />
+                <button id="carrier-search-button" type="button">Search carriers</button>
+              </div>
+            </div>
+            <div id="carriers-list" class="carrier-grid"></div>
+          </div>
           <div class="panel">
-            <div class="toolbar"><h2>Requests</h2></div>
+            <div class="toolbar"><h2>Requests and offers</h2></div>
             <p class="muted small" id="requests-note"></p>
             <div id="requests-list"></div>
           </div>
@@ -228,7 +549,7 @@
 
     <!-- Order detail leaves the board column entirely and arrives as an overlay, so
          opening an order never rearranges the dispatch list underneath it. -->
-    <aside id="drawer" class="drawer hidden" aria-label="Order detail">
+    <aside id="drawer" class="drawer hidden" aria-label="Order or shipment detail">
       <div class="drawer-head">
         <h2 id="drawer-title">Order</h2>
         <button id="drawer-close" class="ghost" type="button">Close</button>

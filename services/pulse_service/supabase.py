@@ -72,6 +72,20 @@ class Supabase:
         )
         return self._unwrap(status, body, f"select {table}")
 
+    def insert_row(
+        self, table: str, payload: dict[str, Any], token: str | None
+    ) -> Any:
+        headers = self._headers(token)
+        headers["Prefer"] = "return=representation"
+        status, body = http_json(
+            "POST",
+            f"{self.cfg.supabase_url}/rest/v1/{table}",
+            provider="supabase",
+            headers=headers,
+            payload=payload,
+        )
+        return self._unwrap(status, body, f"insert {table}")
+
     def sign_in(self, email: str, password: str) -> dict[str, Any]:
         status, body = http_json(
             "POST",

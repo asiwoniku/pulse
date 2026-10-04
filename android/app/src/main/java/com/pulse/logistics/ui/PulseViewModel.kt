@@ -7,6 +7,8 @@ import com.pulse.logistics.BuildConfig
 import com.pulse.logistics.core.model.DriverSummary
 import com.pulse.logistics.core.model.DriverTask
 import com.pulse.logistics.core.model.OrderSummary
+import com.pulse.logistics.core.model.ShipmentEventSummary
+import com.pulse.logistics.core.model.ShipmentSummary
 import com.pulse.logistics.core.model.WorkspaceSummary
 import com.pulse.logistics.core.network.Session
 import com.pulse.logistics.core.network.SessionStore
@@ -16,6 +18,7 @@ import com.pulse.logistics.data.AuthApi
 import com.pulse.logistics.data.AuthOutcome
 import com.pulse.logistics.data.OperationsApi
 import com.pulse.logistics.data.OrdersApi
+import com.pulse.logistics.data.ShipmentsApi
 import com.pulse.logistics.data.WorkspaceApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -35,6 +38,9 @@ data class PulseUiState(
     val drivers: List<DriverSummary> = emptyList(),
     val history: List<String> = emptyList(),
     val tasks: List<DriverTask> = emptyList(),
+    val shipments: List<ShipmentSummary> = emptyList(),
+    val selectedShipmentId: String? = null,
+    val shipmentEvents: List<ShipmentEventSummary> = emptyList(),
 )
 
 /**
@@ -58,6 +64,7 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
     internal val auth = AuthApi(client)
     internal val spaces = WorkspaceApi(client)
     internal val board = OrdersApi(client)
+    internal val shipmentData = ShipmentsApi(client)
     internal val ops = OperationsApi(client)
 
     internal val _state = MutableStateFlow(PulseUiState(configured = configured))
@@ -89,10 +96,28 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loadWorkspaces() = guard { reloadSpaces() }
 
+    fun refreshShipments() = guard { reloadShipments() }
+
+    fun selectShipment(shipmentId: String) = guard {
+        val events = shipmentData.events(shipmentId)
+        _state.update { it.copy(selectedShipmentId = shipmentId, shipmentEvents = events) }
+    }
+
+    fun clearSelectedShipment() = _state.update {
+        it.copy(selectedShipmentId = null, shipmentEvents = emptyList())
+    }
+
     fun selectWorkspace(id: String) = guard {
         val target = _state.value.workspaces.firstOrNull { it.id == id } ?: return@guard
         store.setActiveBusiness(target.id, target.name, target.role?.raw)
-        _state.update { it.copy(activeWorkspace = target) }
+        _state.update {
+            it.copy(
+                activeWorkspace = target,
+                shipments = emptyList(),
+                selectedShipmentId = null,
+                shipmentEvents = emptyList(),
+            )
+        }
         open(target)
     }
 
@@ -134,6 +159,10 @@ class PulseViewModel(application: Application) : AndroidViewModel(application) {
     internal suspend fun reloadBoard() {
         val id = workspace().id
         _state.update { it.copy(orders = board.board(id), drivers = board.drivers(id)) }
+    }
+
+    internal suspend fun reloadShipments() {
+        _state.update { it.copy(shipments = shipmentData.shipments(workspace().id)) }
     }
 
     internal suspend fun reloadTasks() {

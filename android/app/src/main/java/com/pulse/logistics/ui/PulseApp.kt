@@ -1,5 +1,6 @@
 package com.pulse.logistics.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,10 +16,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,10 +32,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.pulse.logistics.BuildConfig
 import com.pulse.logistics.core.model.BusinessRole
 import com.pulse.logistics.core.model.DeliveryEvent
 import com.pulse.logistics.core.model.DriverStatus
 import com.pulse.logistics.core.model.OrderStatus
+import java.util.UUID
 
 /**
  * The whole surface in one file: sign in, workspace setup, dispatch board, driver
@@ -42,9 +47,16 @@ import com.pulse.logistics.core.model.OrderStatus
 @Composable
 fun PulseApp(vm: PulseViewModel = viewModel()) {
     val state by vm.state.collectAsState()
+    var showDevelopmentPreview by remember { mutableStateOf(false) }
+    BackHandler(enabled = showDevelopmentPreview) { showDevelopmentPreview = false }
     Shell(state, vm) {
         when {
-            state.session == null -> AuthPanel(state, vm)
+            showDevelopmentPreview -> DevelopmentPreview(onExit = { showDevelopmentPreview = false })
+            state.session == null -> AuthPanel(
+                state,
+                vm,
+                onOpenDevelopmentPreview = { showDevelopmentPreview = true },
+            )
             state.workspaces.isEmpty() -> SetupPanel(state, vm)
             else -> WorkspacePanel(state, vm)
         }
@@ -101,7 +113,11 @@ private fun Field(value: String, onChange: (String) -> Unit, label: String) {
     )
 }
 @Composable
-private fun AuthPanel(state: PulseUiState, vm: PulseViewModel) {
+private fun AuthPanel(
+    state: PulseUiState,
+    vm: PulseViewModel,
+    onOpenDevelopmentPreview: () -> Unit,
+) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var fullName by remember { mutableStateOf("") }
@@ -130,6 +146,14 @@ private fun AuthPanel(state: PulseUiState, vm: PulseViewModel) {
             ) { Text(if (register) "Create account" else "Sign in") }
             TextButton(onClick = { register = !register }) {
                 Text(if (register) "I already have an account" else "Need an account? Create one")
+            }
+            if (BuildConfig.DEMO_PREVIEW_ENABLED) {
+                OutlinedButton(
+                    onClick = onOpenDevelopmentPreview,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Open mock-data demo (debug only)")
+                }
             }
         }
     }
@@ -162,6 +186,7 @@ private fun SetupPanel(state: PulseUiState, vm: PulseViewModel) {
 private fun WorkspacePanel(state: PulseUiState, vm: PulseViewModel) {
     val workspace = state.activeWorkspace ?: return
     var showDriver by remember { mutableStateOf(false) }
+    var showShipments by remember { mutableStateOf(false) }
 
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(workspace.role?.label ?: "member", fontWeight = FontWeight.SemiBold)
@@ -178,14 +203,212 @@ private fun WorkspacePanel(state: PulseUiState, vm: PulseViewModel) {
             }
         }
     }
-    if (workspace.role?.canOperate == true && !showDriver) {
-        DispatchPanel(state, vm)
-        OutlinedButton(onClick = { vm.refreshTasks(); showDriver = true }) { Text("My driver tasks") }
-    } else {
-        DriverPanel(state, vm)
-        if (workspace.role?.canOperate == true) {
-            OutlinedButton(onClick = { showDriver = false; vm.refreshBoard() }) { Text("Dispatch board") }
+    when {
+        showShipments && workspace.role?.canOperate == true -> ShipmentPanel(state, vm)
+        workspace.role?.canOperate == true && !showDriver -> DispatchPanel(state, vm)
+        else -> DriverPanel(state, vm)
+    }
+    if (workspace.role?.canOperate == true) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = {
+                    val nextShowDriver = !showDriver
+                    showDriver = nextShowDriver
+                    showShipments = false
+                    if (nextShowDriver) vm.refreshTasks() else vm.refreshBoard()
+                },
+            ) {
+                Text(if (showDriver) "Dispatch board" else "My driver tasks")
+            }
+            OutlinedButton(
+                onClick = {
+                    showDriver = false
+                    showShipments = !showShipments
+                    if (showShipments) vm.refreshShipments() else vm.refreshBoard()
+                },
+            ) {
+                Text(if (showShipments) "Dispatch board" else "Shipments")
+            }
         }
+    }
+}
+
+@Composable
+private fun ShipmentPanel(state: PulseUiState, vm: PulseViewModel) {
+    SectionHeader("Shipment Passports")
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "${state.shipments.size} shipment(s) visible",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        TextButton(onClick = { vm.refreshShipments() }, enabled = !state.busy) {
+            Text("Refresh")
+        }
+    }
+    if (state.shipments.isEmpty()) {
+        Text(
+            "No shipments are visible for this workspace. This is a live database result, not a demo list.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+    state.shipments.forEach { shipment ->
+        Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+            Column(
+                Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(shipment.pulseId, fontWeight = FontWeight.SemiBold)
+                StatusChip(OrderStatus.from(shipment.status), shipment.status)
+                Text(
+                    listOfNotNull(shipment.orderReference, shipment.pickup, shipment.destination)
+                        .joinToString(" · ")
+                        .ifBlank { "Order details are not visible to this account." },
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    shipment.lastVerifiedAt?.let {
+                        "Last verified · $it" +
+                            (shipment.lastVerifiedLocation?.let { location -> " · $location" } ?: "")
+                    } ?: "No verified update recorded",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedButton(
+                    onClick = { vm.selectShipment(shipment.id) },
+                    enabled = !state.busy,
+                ) {
+                    Text(if (state.selectedShipmentId == shipment.id) "Refresh timeline" else "View timeline")
+                }
+                if (state.selectedShipmentId == shipment.id) {
+                    ShipmentTimeline(state, vm, shipment.id, shipment.pulseId)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShipmentTimeline(
+    state: PulseUiState,
+    vm: PulseViewModel,
+    shipmentRowId: String,
+    pulseShipmentId: String,
+) {
+    SectionHeader("Event timeline")
+    if (state.shipmentEvents.isEmpty()) {
+        Text("No shipment events have been recorded.", style = MaterialTheme.typography.bodySmall)
+    }
+    state.shipmentEvents.forEach { event ->
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = MaterialTheme.shapes.small,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(
+                Modifier.padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(event.eventType.replace('_', ' '), fontWeight = FontWeight.Medium)
+                Text(
+                    "${event.verification ?: "verification unavailable"} · ${event.source ?: "source unavailable"}",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    listOfNotNull(event.occurredAt, event.location).joinToString(" · ")
+                        .ifBlank { "Time and location not supplied" },
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                event.note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            }
+        }
+    }
+
+    ManualShipmentEventForm(state, vm, shipmentRowId, pulseShipmentId)
+}
+
+@Composable
+private fun ManualShipmentEventForm(
+    state: PulseUiState,
+    vm: PulseViewModel,
+    shipmentRowId: String,
+    pulseShipmentId: String,
+) {
+    val eventTypes = listOf(
+        "PICKED_UP",
+        "IN_TRANSIT",
+        "ARRIVED_DESTINATION_COUNTRY",
+        "CUSTOMS_PROCESSING",
+        "CUSTOMS_CLEARED",
+        "OUT_FOR_DELIVERY",
+        "DELIVERY_ATTEMPTED",
+        "DELIVERED",
+        "EXCEPTION",
+        "CANCELLED",
+        "RETURNED",
+    )
+    var eventType by remember(shipmentRowId) { mutableStateOf(eventTypes.first()) }
+    var location by remember(shipmentRowId) { mutableStateOf("") }
+    var note by remember(shipmentRowId) { mutableStateOf("") }
+    var idempotencyKey by remember(shipmentRowId) { mutableStateOf(UUID.randomUUID().toString()) }
+
+    LaunchedEffect(state.message) {
+        if (state.message == "Shipment event recorded.") {
+            idempotencyKey = UUID.randomUUID().toString()
+        }
+    }
+
+    SectionHeader("Record a manual update")
+    Text(
+        "Manual events are recorded as pending review. Trusted provider/facility sources are not submitted from this screen.",
+        style = MaterialTheme.typography.bodySmall,
+    )
+    eventTypes.forEach { option ->
+        FilterChip(
+            selected = eventType == option,
+            onClick = {
+                eventType = option
+                idempotencyKey = UUID.randomUUID().toString()
+            },
+            label = { Text(option.replace('_', ' ')) },
+        )
+    }
+    OutlinedTextField(
+        value = location,
+        onValueChange = {
+            location = it
+            idempotencyKey = UUID.randomUUID().toString()
+        },
+        label = { Text("Location (optional)") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+        value = note,
+        onValueChange = {
+            note = it
+            idempotencyKey = UUID.randomUUID().toString()
+        },
+        label = { Text("Note (optional)") },
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Button(
+        onClick = {
+            vm.recordShipmentEvent(
+                shipmentRowId = shipmentRowId,
+                pulseShipmentId = pulseShipmentId,
+                eventType = eventType,
+                idempotencyKey = idempotencyKey,
+                location = location,
+                note = note,
+            )
+        },
+        enabled = !state.busy,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text("Record event")
     }
 }
 

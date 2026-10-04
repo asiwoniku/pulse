@@ -57,7 +57,7 @@ ALLOWED_RPC = {
     "record_delivery_attempt",
     "capture_proof_of_delivery",
     "set_driver_availability",
-    # Marketplace (0017-0021). browse_carriers is a directory read, not a proxy:
+    # Marketplace and shipment RPCs (0017-0022). browse_carriers is a directory read, not a proxy:
     # it returns named columns only and is the sole way one business can see
     # another. create_business now also takes p_kind / p_phone_e164.
     "browse_carriers",
@@ -65,6 +65,7 @@ ALLOWED_RPC = {
     "respond_to_offer",
     "withdraw_offer",
     "expire_stale_offers",
+    "record_shipment_event",
 }
 PATCHABLE_COLUMNS = {
     "status",
@@ -318,6 +319,56 @@ def _signin(request: Request) -> tuple[int, Any]:
     )
 
 
+@route("POST /api/auth/oauth/{provider}")
+def _oauth_start(request: Request) -> tuple[int, Any]:
+    provider = request.params["provider"].strip().lower()
+    supabase_provider = {"google": "google", "microsoft": "azure"}.get(provider)
+    if not supabase_provider:
+        raise ServiceError("Choose Google or Microsoft to continue.", source="pulse")
+    if not request.cfg.is_live("supabase"):
+        raise ServiceError(
+            "Social sign-in is unavailable until SUPABASE_URL and SUPABASE_ANON_KEY are configured.",
+            status=503,
+            source="supabase-auth",
+        )
+
+    origin = request.headers.get("HTTP_ORIGIN", "").rstrip("/")
+    host = request.headers.get("HTTP_HOST", "").strip()
+    parsed_origin = urllib.parse.urlsplit(origin)
+    local_hosts = {"localhost", "127.0.0.1", "::1"}
+    local_origin = (parsed_origin.hostname or "").lower() in local_hosts
+    if (
+        not origin
+        or not host
+        or parsed_origin.netloc.lower() != host.lower()
+        or parsed_origin.scheme not in ({"http", "https"} if local_origin else {"https"})
+        or parsed_origin.username
+        or parsed_origin.password
+    ):
+        raise ServiceError(
+            "Social sign-in must be started from this secure Pulse website.",
+            status=400,
+            source="supabase-auth",
+        )
+
+    query_values = {
+        "provider": supabase_provider,
+        "redirect_to": f"{origin}/",
+        "apikey": request.cfg.anon_key,
+    }
+    if supabase_provider == "azure":
+        query_values["scopes"] = "email"
+    query = urllib.parse.urlencode(query_values)
+    return 200, {
+        "authorization_url": f"{request.cfg.supabase_url}/auth/v1/authorize?{query}",
+        "provider": provider,
+        "note": (
+            "This provider must be enabled in Supabase Auth, and this site's redirect "
+            "URL must be allowed in the Supabase URL configuration."
+        ),
+    }
+
+
 @route("POST /api/auth/signup")
 def _signup(request: Request) -> tuple[int, Any]:
     return 201, request.db().sign_up(
@@ -562,6 +613,249 @@ def _members(request: Request) -> tuple[int, Any]:
     }
 
 
+def _workspace_query(request: Request) -> tuple[str, str]:
+    token = request.need_token()
+    business_id = str(request.query.get("business_id") or "").strip()
+    if not re.fullmatch(
+        r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}",
+        business_id,
+    ):
+        raise ServiceError("business_id must be a UUID.", source="pulse")
+    return token, business_id
+
+
+@route("GET /api/moving-requests")
+def _moving_requests(request: Request) -> tuple[int, Any]:
+    token, business_id = _workspace_query(request)
+    db = request.db()
+    rows = db.select(
+        "moving_requests",
+        "select=id,business_id,order_id,customer_id,status,origin_text,"
+        "destination_text,preferred_date,survey_note,requires_survey,"
+        "requires_packing,requires_unpacking,requires_crate_storage,has_stairs,"
+        "has_elevator,quote_amount,currency,created_at,updated_at"
+        f"&business_id=eq.{business_id}&order=created_at.desc&limit=101",
+        token,
+    ) or []
+    has_more = len(rows) > 100
+    rows = rows[:100]
+    request_ids = [str(row["id"]) for row in rows]
+    items = (
+        db.select(
+            "moving_items",
+            "select=id,moving_request_id,name,quantity,condition_note,"
+            f"handling_instruction,created_at&moving_request_id={_in_filter(request_ids)}"
+            "&order=created_at.asc&limit=500",
+            token,
+        )
+        if request_ids
+        else []
+    ) or []
+    by_request: dict[str, list[dict[str, Any]]] = {}
+    for item in items:
+        by_request.setdefault(str(item["moving_request_id"]), []).append(item)
+    for row in rows:
+        row["items"] = by_request.get(str(row["id"]), [])
+    return 200, {
+        "moving_requests": rows,
+        "has_more": has_more,
+        "note": "Moving requests and captured inventory are read under workspace RLS.",
+    }
+
+
+@route("POST /api/moving-requests")
+def _moving_request_create(request: Request) -> tuple[int, Any]:
+    token = request.need_token()
+    body = request.body
+    business_id = str(body.get("business_id") or "").strip()
+    if not re.fullmatch(
+        r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}",
+        business_id,
+    ):
+        raise ServiceError("business_id must be a UUID.", source="pulse")
+    origin = str(body.get("origin_text") or "").strip()
+    destination = str(body.get("destination_text") or "").strip()
+    if len(origin) < 3 or len(origin) > 500:
+        raise ServiceError("Origin must be between 3 and 500 characters.", source="pulse")
+    if len(destination) < 3 or len(destination) > 500:
+        raise ServiceError(
+            "Destination must be between 3 and 500 characters.", source="pulse"
+        )
+
+    payload: dict[str, Any] = {
+        "business_id": business_id,
+        "origin_text": origin,
+        "destination_text": destination,
+    }
+    preferred_date = str(body.get("preferred_date") or "").strip()
+    if preferred_date:
+        try:
+            from datetime import date
+            date.fromisoformat(preferred_date)
+        except ValueError as error:
+            raise ServiceError("preferred_date must be an ISO date.", source="pulse") from error
+        payload["preferred_date"] = preferred_date
+    for key in (
+        "requires_survey", "requires_packing", "requires_unpacking",
+        "requires_crate_storage", "has_stairs", "has_elevator",
+    ):
+        value = body.get(key)
+        if value is not None:
+            if not isinstance(value, str) or value not in ("unset", "yes", "no"):
+                raise ServiceError(f"{key} must be unset, yes, or no.", source="pulse")
+            payload[key] = value
+    currency = str(body.get("currency") or "NGN").strip().upper()
+    if not re.fullmatch(r"[A-Z]{3}", currency):
+        raise ServiceError("currency must be a three-letter code.", source="pulse")
+    payload["currency"] = currency
+
+    rows = request.db().insert_row("moving_requests", payload, token) or []
+    if not rows or not isinstance(rows[0], dict) or not rows[0].get("id"):
+        raise ServiceError(
+            "The database did not return the created moving request.",
+            status=502,
+            source="supabase",
+        )
+    return 201, {"moving_request": rows[0]}
+
+
+@route("GET /api/payment-attempts")
+def _payment_attempts(request: Request) -> tuple[int, Any]:
+    token, business_id = _workspace_query(request)
+    db = request.db()
+    attempts = db.select(
+        "payment_attempts",
+        "select=id,business_id,order_id,provider,provider_reference,amount,currency,"
+        "status,failure_reason,initiated_by,confirmed_by,created_at,updated_at,confirmed_at"
+        f"&business_id=eq.{business_id}&order=created_at.desc&limit=101",
+        token,
+    ) or []
+    has_more = len(attempts) > 100
+    attempts = attempts[:100]
+    order_ids = sorted({str(row["order_id"]) for row in attempts if row.get("order_id")})
+    orders = (
+        db.select(
+            "orders",
+            f"select=id,reference,status,payment_status&id={_in_filter(order_ids)}",
+            token,
+        )
+        if order_ids
+        else []
+    ) or []
+    order_map = {str(row["id"]): row for row in orders}
+    for row in attempts:
+        row["order"] = order_map.get(str(row.get("order_id")))
+    return 200, {
+        "payment_attempts": attempts,
+        "has_more": has_more,
+        "note": "These are recorded attempts only. No payment provider is configured.",
+    }
+
+
+@route("GET /api/notifications")
+def _notifications(request: Request) -> tuple[int, Any]:
+    token, business_id = _workspace_query(request)
+    rows = request.db().select(
+        "notifications",
+        "select=id,order_id,channel,template_key,title,body,status,failure_reason,"
+        f"created_at,sent_at&business_id=eq.{business_id}"
+        "&order=created_at.desc&limit=50",
+        token,
+    ) or []
+    return 200, {
+        "notifications": rows,
+        "note": "Delivery status is reported by the configured provider, if any.",
+    }
+
+
+@route("GET /api/audit-logs")
+def _audit_logs(request: Request) -> tuple[int, Any]:
+    token, business_id = _workspace_query(request)
+    rows = request.db().select(
+        "audit_logs",
+        "select=id,actor_user_id,actor_kind,action,target_table,target_id,summary,"
+        f"metadata,occurred_at&business_id=eq.{business_id}"
+        "&order=occurred_at.desc&limit=100",
+        token,
+    ) or []
+    return 200, {
+        "audit_logs": rows,
+        "note": "Audit history is append-only and limited to rows visible to your role.",
+    }
+
+
+@route("GET /api/order-feedback")
+def _order_feedback(request: Request) -> tuple[int, Any]:
+    token, business_id = _workspace_query(request)
+    db = request.db()
+    feedback = db.select(
+        "order_feedback",
+        "select=id,order_id,customer_id,driver_id,rating,comment,created_at"
+        f"&business_id=eq.{business_id}&order=created_at.desc&limit=101",
+        token,
+    ) or []
+    has_more = len(feedback) > 100
+    feedback = feedback[:100]
+    order_ids = sorted({str(row["order_id"]) for row in feedback if row.get("order_id")})
+    orders = (
+        db.select(
+            "orders",
+            f"select=id,reference,status&id={_in_filter(order_ids)}",
+            token,
+        )
+        if order_ids
+        else []
+    ) or []
+    order_map = {str(row["id"]): row for row in orders}
+    for row in feedback:
+        row["order"] = order_map.get(str(row.get("order_id")))
+    return 200, {
+        "feedback": feedback,
+        "has_more": has_more,
+        "note": "Ratings are derived only from feedback on completed orders.",
+    }
+
+
+@route("GET /api/documents")
+def _documents(request: Request) -> tuple[int, Any]:
+    token, business_id = _workspace_query(request)
+    db = request.db()
+    shipments = db.select(
+        "pulse_shipments",
+        "select=id,pulse_shipment_id,order_id,business_id,originator_business_id,"
+        f"created_at&or=(business_id.eq.{business_id},originator_business_id.eq.{business_id})"
+        "&order=created_at.desc&limit=101",
+        token,
+    ) or []
+    has_more = len(shipments) > 100
+    shipments = shipments[:100]
+    shipment_ids = [str(row["id"]) for row in shipments]
+    events = (
+        db.select(
+            "pulse_shipment_events",
+            "select=event_id,shipment_id,event_type,source_type,occurred_at,received_at,"
+            "location,verification_status"
+            f"&shipment_id={_in_filter(shipment_ids)}"
+            "&event_type=eq.proof_of_delivery_uploaded&order=occurred_at.desc&limit=500",
+            token,
+        )
+        if shipment_ids
+        else []
+    ) or []
+    shipment_map = {str(row["id"]): row for row in shipments}
+    documents = [
+        {**event, "shipment": shipment_map.get(str(event["shipment_id"]))}
+        for event in events
+        if event.get("shipment_id") in shipment_map
+    ]
+    return 200, {
+        "documents": documents,
+        "shipments_scanned": len(shipments),
+        "has_more": has_more,
+        "note": "This index lists recorded proof-of-delivery events; it does not expose private file contents.",
+    }
+
+
 @route("PATCH /api/businesses/{business_id}")
 def _patch_business(request: Request) -> tuple[int, Any]:
     """Company profile edit. Only the columns a business may set about itself; kind,
@@ -610,6 +904,106 @@ def _drivers_list(request: Request) -> tuple[int, Any]:
     }
 
 
+@route("GET /api/customers")
+def _customers_list(request: Request) -> tuple[int, Any]:
+    token = request.need_token()
+    business_id = str(request.query.get("business_id") or "").strip()
+    if not re.fullmatch(r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}", business_id):
+        raise ServiceError("business_id must be a UUID.", source="pulse")
+
+    limit = max(1, _positive_int(request.query.get("limit"), "limit", 50, 100))
+    offset = _positive_int(request.query.get("offset"), "offset", 0, 1000000)
+    query = (
+        "select=id,display_name,phone_e164,email,city,source,created_at"
+        f"&business_id=eq.{business_id}&order=display_name.asc,created_at.desc"
+        f"&limit={limit + 1}&offset={offset}"
+    )
+    search = str(request.query.get("q") or "").strip()
+    if search:
+        if len(search) > 80:
+            raise ServiceError("Search must be 80 characters or fewer.", source="pulse")
+        needle = urllib.parse.quote(f"*{search}*", safe="")
+        query += (
+            "&or=(display_name.ilike."
+            f"{needle},phone_e164.ilike.{needle},email.ilike.{needle})"
+        )
+
+    rows = request.db().select("customers", query, token) or []
+    has_more = len(rows) > limit
+    return 200, {
+        "customers": rows[:limit],
+        "limit": limit,
+        "offset": offset,
+        "has_more": has_more,
+        "note": "Customer visibility is enforced by Postgres row-level security.",
+    }
+
+
+@route("GET /api/vehicles")
+def _vehicles_list(request: Request) -> tuple[int, Any]:
+    token = request.need_token()
+    business_id = str(request.query.get("business_id") or "").strip()
+    if not re.fullmatch(r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}", business_id):
+        raise ServiceError("business_id must be a UUID.", source="pulse")
+    rows = request.db().select(
+        "vehicles",
+        "select=id,business_id,driver_id,label,registration,type,capacity_note,"
+        f"is_active,created_at&business_id=eq.{business_id}&order=label.asc&limit=200",
+        token,
+    ) or []
+    return 200, {
+        "vehicles": rows,
+        "note": "Vehicle visibility is enforced by Postgres row-level security.",
+    }
+
+
+@route("POST /api/vehicles")
+def _vehicle_create(request: Request) -> tuple[int, Any]:
+    token = request.need_token()
+    body = request.body
+    allowed = {"business_id", "label", "registration", "type", "capacity_note"}
+    unknown = sorted(set(body) - allowed)
+    if unknown:
+        raise ServiceError(
+            "Unsupported vehicle fields.",
+            source="pulse",
+            detail={"unsupported_fields": unknown},
+        )
+
+    business_id = str(body.get("business_id") or "").strip()
+    if not re.fullmatch(r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}", business_id):
+        raise ServiceError("business_id must be a UUID.", source="pulse")
+    label = str(body.get("label") or "").strip()
+    if not 2 <= len(label) <= 80:
+        raise ServiceError("Vehicle label must be between 2 and 80 characters.", source="pulse")
+    vehicle_type = str(body.get("type") or "other").strip()
+    if vehicle_type not in {"motorbike", "tricycle", "van", "truck", "bicycle", "other"}:
+        raise ServiceError("Choose a supported vehicle type.", source="pulse")
+
+    payload: dict[str, Any] = {
+        "business_id": business_id,
+        "label": label,
+        "type": vehicle_type,
+    }
+    for field_name, maximum in (("registration", 64), ("capacity_note", 200)):
+        value = str(body.get(field_name) or "").strip()
+        if len(value) > maximum:
+            raise ServiceError(
+                f"{field_name.replace('_', ' ').capitalize()} must be {maximum} characters or fewer.",
+                source="pulse",
+            )
+        if value:
+            payload[field_name] = value
+
+    rows = request.db().insert_row("vehicles", payload, token) or []
+    if not rows:
+        raise ServiceError("The vehicle was not returned after saving.", status=502, source="supabase")
+    return 201, {
+        "vehicle": rows[0],
+        "note": "The database's vehicle write policy decided whether this was allowed.",
+    }
+
+
 @route("GET /api/carriers")
 def _carriers(request: Request) -> tuple[int, Any]:
     """Carrier directory for vendors. Runs entirely inside Postgres via
@@ -643,6 +1037,127 @@ def _offers(request: Request) -> tuple[int, Any]:
         token,
     ) or []
     return 200, {"offers": rows, "note": "Only the two parties to an offer can see it."}
+
+
+SHIPMENT_COLUMNS = (
+    "id,pulse_shipment_id,order_id,business_id,originator_business_id,current_status,"
+    "last_verified_event_at,last_verified_location,last_event_received_at,created_at,updated_at"
+)
+SHIPMENT_EVENT_COLUMNS = (
+    "event_id,shipment_id,event_type,source_type,"
+    "occurred_at,received_at,location,latitude,longitude,verification_status,"
+    "order_status_from,order_status_to,metadata"
+)
+SHIPMENT_ORDER_COLUMNS = (
+    "id,reference,status,service_type,pickup_text,destination_text,requested_at,"
+    "scheduled_at,price_amount,currency"
+)
+
+
+def _positive_int(value: str | None, label: str, default: int, maximum: int) -> int:
+    try:
+        number = int(value or default)
+    except (TypeError, ValueError) as error:
+        raise ServiceError(f"{label} must be a whole number.", source="pulse") from error
+    return max(0, min(number, maximum))
+
+
+@route("GET /api/shipments")
+def _shipments(request: Request) -> tuple[int, Any]:
+    """List shipments visible to the current workspace through shipment RLS."""
+    token = request.need_token()
+    business_id = str(request.query.get("business_id") or "").strip()
+    if not re.fullmatch(r"[0-9a-fA-F-]{36}", business_id):
+        raise ServiceError("business_id must be a UUID.", source="pulse")
+
+    limit = max(1, _positive_int(request.query.get("limit"), "limit", 25, 100))
+    offset = _positive_int(request.query.get("offset"), "offset", 0, 1000000)
+    query = (
+        f"select={SHIPMENT_COLUMNS}"
+        f"&or=(business_id.eq.{business_id},originator_business_id.eq.{business_id})"
+        f"&order=created_at.desc&limit={limit + 1}&offset={offset}"
+    )
+    status = str(request.query.get("status") or "").strip()
+    if status:
+        if not re.fullmatch(r"[a-z_]{1,48}", status):
+            raise ServiceError("status contains unsupported characters.", source="pulse")
+        query += f"&current_status=eq.{status}"
+    search = str(request.query.get("q") or "").strip()
+    if search:
+        if len(search) > 80:
+            raise ServiceError("Search must be 80 characters or fewer.", source="pulse")
+        encoded = urllib.parse.quote(f"*{search}*", safe="")
+        query += f"&pulse_shipment_id=ilike.{encoded}"
+
+    rows = request.db().select("pulse_shipments", query, token) or []
+    has_more = len(rows) > limit
+    shipments = rows[:limit]
+    order_ids = sorted({str(row["order_id"]) for row in shipments if row.get("order_id")})
+    orders = (
+        request.db().select(
+            "orders",
+            f"select={SHIPMENT_ORDER_COLUMNS}"
+            f"&id={_in_filter(order_ids)}",
+            token,
+        )
+        if order_ids
+        else []
+    )
+    orders_by_id = {str(row["id"]): row for row in orders or []}
+    for shipment in shipments:
+        shipment["order"] = orders_by_id.get(str(shipment.get("order_id")))
+
+    return 200, {
+        "shipments": shipments,
+        "limit": limit,
+        "offset": offset,
+        "has_more": has_more,
+        "note": "Shipment visibility is enforced by Postgres row-level security.",
+    }
+
+
+@route("GET /api/shipments/{shipment_id}")
+def _shipment_detail(request: Request) -> tuple[int, Any]:
+    """Shipment Passport read model. RLS controls both shipment and event visibility."""
+    token = request.need_token()
+    shipment_id = request.params["shipment_id"]
+    if not re.fullmatch(r"[0-9a-fA-F-]{36}", shipment_id):
+        raise ServiceError("shipment_id must be a UUID.", source="pulse")
+    rows = request.db().select(
+        "pulse_shipments",
+        f"select={SHIPMENT_COLUMNS}&id=eq.{shipment_id}&limit=1",
+        token,
+    ) or []
+    if not rows:
+        raise ServiceError(
+            "No such shipment for this account: row-level security returned nothing, "
+            "so it is either missing or not yours.",
+            status=404,
+            source="supabase",
+        )
+
+    shipment = rows[0]
+    order_rows = request.db().select(
+        "orders",
+        f"select={SHIPMENT_ORDER_COLUMNS}&id=eq.{shipment['order_id']}&limit=1",
+        token,
+    ) or []
+    events = request.db().select(
+        "pulse_shipment_events",
+        f"select={SHIPMENT_EVENT_COLUMNS}&shipment_id=eq.{shipment['id']}"
+        "&order=occurred_at.desc,received_at.desc&limit=501",
+        token,
+    ) or []
+    events_truncated = len(events) > 500
+    events = events[:500]
+    events.reverse()
+    return 200, {
+        "shipment": shipment,
+        "order": order_rows[0] if order_rows else None,
+        "events": events,
+        "events_truncated": events_truncated,
+        "note": "Only shipment participants and the originating vendor can read this passport.",
+    }
 
 
 @route("GET /api/orders/{order_id}")

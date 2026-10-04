@@ -1,7 +1,8 @@
 # Supabase schema
 
-Sixteen migrations build the whole control plane: schema, the order state
-machine, RBAC, and row level security. Nothing in here contains demo data.
+Twenty-two migrations build the control plane: schema, the order state machine,
+marketplace offers, canonical shipment identities and event history, RBAC, and
+row level security. Nothing in here contains demo data.
 
 ## Applying
 
@@ -11,8 +12,9 @@ supabase db push            # applies migrations in filename order
 ```
 
 Or through the dashboard SQL editor, running each file top to bottom in numeric
-order. `0001`–`0016` are strictly ordered: later files call helpers defined in
-earlier ones, and `0014` revokes the privileges that `0016` re-grants.
+order. Migrations are strictly ordered: later files call helpers defined in
+earlier ones, and `0014` revokes the privileges that `0016` re-grants before
+later migrations explicitly add their required grants.
 
 There is no `seed.sql` and no demo data (see below), so `supabase db reset`
 leaves an empty but fully functional database. That is the intended state.
@@ -42,6 +44,9 @@ leaves an empty but fully functional database. That is the intended state.
 | 0019 | `orders.originator_business_id`, offer policies, `guard_offer_transition` |
 | 0020 | `browse_carriers` (directory read), `create_delivery_offer` |
 | 0021 | `respond_to_offer` (offer → order), `withdraw_offer`, counterparty read policy |
+| 0022 | one-to-one Pulse shipment identity for each order, append-only source-aware event history, verification state, idempotent event RPC, participant RLS and realtime |
+| 0023 | re-creates the `on_auth_user_created` sign-up trigger and revokes execute on the internal functions from `PUBLIC` as well as `authenticated` |
+| 0024 | closes every application RPC to `PUBLIC`/`anon`, then re-grants the client-facing set to `authenticated` |
 
 ## The marketplace in one paragraph
 
@@ -53,6 +58,16 @@ A business is a `carrier` (fulfils deliveries, employs drivers) or a `vendor`
 invoices the vendor that sent it the job) and `originator_business_id` linking back —
 `0019`, `0021`. That is why no second fulfilment path exists: the state machine,
 one-live-assignment, the column guards and the status history all apply unchanged.
+
+Migration `0022` gives each order an immutable `PLS-<country>-<sequence>` shipment
+identifier and mirrors its real status history into `pulse_shipment_events`.
+Events retain their source, occurrence/receipt times, verification level,
+optional location/evidence, actor and idempotency key. Order-driven events are
+verified first-party records; partner-submitted events remain provider-reported
+or pending review and do not silently change the order status. Shipment and event
+reads follow the same customer, carrier and vendor visibility as the linked order.
+This is the data foundation only: public tracking links, document/inspection
+workflows, provider integrations and the Shipment Passport UI are not included.
 
 `browse_carriers()` is deliberately a `SECURITY DEFINER` function and not a policy.
 Discovery means reading businesses you do not belong to, and RLS is row-level, so any
@@ -92,7 +107,48 @@ revokes execute on `write_audit`, `next_order_reference`,
 
 **When you add an RPC, add its grant.** `0016` grants execute to `authenticated`
 for the functions that existed when it was written; a new function is not
-callable from the apps until it is granted (or `0016` is re-run).
+callable from the apps until it is granted (or `0016` is re-run). `0024` then
+closes everything to `PUBLIC`, so a new RPC is unreachable by both `anon` and
+`authenticated` until it appears in `0024`'s client list — that is deliberate,
+because Postgres' default is the opposite (execute granted to `PUBLIC`).
+
+## Two defects found against a live project
+
+Both were invisible while the database was empty and both broke authentication
+outright. `0023` and `0024` are the fix; they are idempotent, so a fresh
+`db push` and this project end in the same state.
+
+**The sign-up trigger never existed (`0002`).** The trigger was guarded by
+
+```sql
+if exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'auth' and p.proname = 'users') then
+```
+
+`pg_proc` holds functions. `auth.users` is a *table*, so the guard was always
+false and `on_auth_user_created` was never created. Every real sign-up produced
+an auth user with no `public.profiles` row, which left the profile read empty
+and made the `current_user_id()`-scoped RLS policies unable to match the caller.
+`0023` uses `to_regclass('auth.users')`, which resolves relations, and verifies
+with `pg_trigger`.
+
+**Internal functions stayed callable (`0016`).** `0016` revokes execute from
+`authenticated`, but Postgres grants execute to `PUBLIC` on every new function
+and `authenticated` holds it through `PUBLIC`. Revoking from a named role cannot
+remove a privilege that role holds via `PUBLIC`, so `refresh_driver_rating(uuid)`
+remained callable by any client with a key. `0023` revokes `PUBLIC` too.
+
+The same mistake applied more widely to the client RPCs: because `PUBLIC` was
+never revoked, all 25 `SECURITY DEFINER` functions were reachable at
+`/rest/v1/rpc/<name>` with the publishable anon key and no session. `0024` brings
+that to zero:
+
+```sql
+-- must be 0
+select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public' and p.prosecdef
+  and has_function_privilege('anon', p.oid, 'execute');
+```
 
 ## Verifying a fresh project
 
@@ -120,6 +176,47 @@ where n.nspname = 'public'
   and proname in ('write_audit','next_order_reference',
                   'refresh_driver_rating','handle_new_auth_user');
 
+-- New shipment tables must have RLS enabled.
+select c.relname
+from pg_class c join pg_namespace n on n.oid = c.relnamespace
+where n.nspname = 'public'
+  and c.relname in ('pulse_shipments','pulse_shipment_events')
+  and c.relrowsecurity is false;
+
+-- The event writer is available to signed-in clients; direct event-table writes are not.
+select has_function_privilege(
+         'authenticated',
+         'public.record_shipment_event(text,text,text,text,text,timestamptz,text,numeric,numeric,jsonb,jsonb)',
+         'execute'
+       ) as can_record_shipment_event;
+
+select has_table_privilege('authenticated', 'public.pulse_shipment_events', 'insert')
+       as can_insert_shipment_events; -- must be false
+
+-- Sign-up must provision a profile (0023). Without this trigger every account has
+-- an auth user and no profile, and the RLS policies below cannot match anyone.
+select exists (
+  select 1 from pg_trigger
+  where tgname = 'on_auth_user_created' and tgrelid = 'auth.users'::regclass
+) as signup_trigger_present; -- must be true
+
+-- No application RPC may be reachable without a session (0024).
+select count(*) as anon_callable_rpcs
+from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public' and p.prosecdef
+  and has_function_privilege('anon', p.oid, 'execute'); -- must be 0
+
+-- Every existing order must have exactly one shipment, and mirrored status must agree.
+select count(*) as orders_without_shipment
+from public.orders o
+left join public.pulse_shipments s on s.order_id = o.id
+where s.id is null; -- 0
+
+select count(*) as shipment_status_mismatches
+from public.orders o
+join public.pulse_shipments s on s.order_id = o.id
+where s.current_status is distinct from o.status; -- 0
+
 -- the real proof: the schema must be empty of business data
 select (select count(*) from orders)      + (select count(*) from customers)
      + (select count(*) from drivers)     + (select count(*) from businesses) as seeded_rows;
@@ -135,9 +232,10 @@ that is the intended failure mode, not a silent fallthrough to permissive.
   transitions and enforces driver-only stages (`arrived`,
   `delivery_attempt_failed`) versus staff-only stages; re-applying the current
   status is a no-op so retries are safe.
-- **Append-only history** (`0005`, `0006`, `0012`): `order_status_history`,
-  `assignment_events`, `audit_logs`, and `order_feedback` reject UPDATE/DELETE
-  through `forbid_mutation`.
+- **Append-only history** (`0005`, `0006`, `0012`, `0018`, `0022`):
+  `order_status_history`, `assignment_events`, `audit_logs`, `order_feedback`,
+  `offer_events`, and `pulse_shipment_events` reject UPDATE/DELETE through
+  `forbid_mutation`.
 - **One live assignment per order** (`0007`): partial unique index on
   `driver_assignments (order_id) where is_current`.
 - **Driver/business consistency** (`0004`): a `drivers` row cannot pair someone

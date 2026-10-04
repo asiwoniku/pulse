@@ -1,5 +1,6 @@
 package com.pulse.logistics.core.model
 
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.Serializable
 
 /**
@@ -77,6 +78,32 @@ data class OrderDto(
     val scheduled_at: String? = null,
     val status_changed_at: String? = null,
     val customer: CustomerEmbed? = null,
+)
+
+@Serializable
+data class ShipmentDto(
+    val id: String? = null,
+    val pulse_shipment_id: String? = null,
+    val order_id: String? = null,
+    val business_id: String? = null,
+    val originator_business_id: String? = null,
+    val current_status: String? = null,
+    val last_verified_event_at: String? = null,
+    val last_verified_location: String? = null,
+    val created_at: String? = null,
+)
+
+@Serializable
+data class ShipmentEventDto(
+    val event_id: String? = null,
+    val shipment_id: String? = null,
+    val event_type: String? = null,
+    val source_type: String? = null,
+    val occurred_at: String? = null,
+    val received_at: String? = null,
+    val location: String? = null,
+    val verification_status: String? = null,
+    val metadata: JsonObject? = null,
 )
 
 @Serializable

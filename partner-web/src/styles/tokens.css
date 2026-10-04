@@ -1,0 +1,86 @@
+/*
+ * Pulse design tokens.
+ *
+ * The brief asks for a distinctive identity rather than a generic admin look, so
+ * the palette is deliberately narrow: one deep navy for structure and trust, one
+ * teal for anything the user can act on, and three semantic colours reserved
+ * exclusively for state. Nothing else gets a colour, which is what keeps a dense
+ * operations table calm rather than noisy.
+ *
+ * Spacing is a strict 4px scale. Anything off-scale is a mistake, not a decision.
+ */
+
+:root {
+  /* Brand */
+  --navy-900: #101b2d;
+  --navy-800: #17263b;
+  --navy-700: #223a56;
+  --navy-600: #315270;
+  --navy-500: #506f8e;
+
+  --teal-700: #08776f;
+  --teal-600: #0e9186;
+  --teal-500: #20ad9e;
+  --teal-100: #d8f3ee;
+  --teal-50: #effaf7;
+
+  /* Canvas + surfaces */
+  --canvas: #f2f5f8;
+  --surface: #ffffff;
+  --surface-sunken: #f7f9fb;
+  --border: #e1e7ed;
+  --border-strong: #c8d2dc;
+
+  /* Text */
+  --text: #17253a;
+  --text-muted: #586a7e;
+  --text-subtle: #8492a2;
+  --text-inverse: #ffffff;
+
+  /* Semantic state — status badges and exception severity only */
+  --success: #1c7a4a;
+  --success-bg: #e6f5ec;
+  --warning: #8a5a08;
+  --warning-bg: #fdf3e0;
+  --critical: #a32b28;
+  --critical-bg: #fdeceb;
+  --info-bg: #e8effa;
+  --info: #234a86;
+
+  /* Spacing scale (4px rhythm) */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 20px;
+  --s6: 24px;
+  --s8: 32px;
+  --s10: 40px;
+  --s12: 48px;
+
+  /* Radius — restrained; the brief warns against "giant rounded cards" */
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 10px;
+  --r-pill: 999px;
+
+  /* Type */
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* Elevation — sparingly, per the brief */
+  --shadow-sm: 0 1px 2px rgba(15, 28, 46, 0.06);
+  --shadow-md: 0 4px 12px rgba(15, 28, 46, 0.08);
+  --shadow-lg: 0 12px 32px rgba(15, 28, 46, 0.12);
+
+  /* Layout */
+  --sidebar-w: 252px;
+  --sidebar-w-collapsed: 64px;
+  --topbar-h: 60px;
+
+  /* Motion — short and subtle; the interface must never feel slow */
+  --t-fast: 120ms;
+  --t-base: 180ms;
+  --ease: cubic-bezier(0.2, 0, 0.2, 1);
+}
