@@ -1,0 +1,41 @@
+# Secrets. This is the important one: the Dockerfile copies the whole services/ tree,
+# and a developer's services/.env holds SUPABASE_SERVICE_ROLE_KEY and provider
+# credentials. Without this, `docker push` publishes that key to a registry.
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+*.pem
+*.key
+service-account.json
+
+# Keep the build context small and the layer cache stable.
+.git
+.gitignore
+.vscode
+.idea
+
+# Platform-specific and already installed inside the image. Copying the host's
+# node_modules over the top of `npm ci` output is both slow and wrong on any other OS.
+node_modules
+**/node_modules
+tools/
+.venv
+venv
+
+# Interpreter- and build-specific output. A .pyc committed from another machine, or a
+# dist/ stale relative to the sources, would silently shadow what the Dockerfile builds.
+__pycache__
+**/__pycache__
+*.py[cod]
+**/*.tsbuildinfo
+dist
+**/dist
+partner-web/dist
+
+# The partner portal ships inside the image (pulse_service/portal); the repo-root
+# scratch logs and local server output do not belong there.
+*.log
+*.txt

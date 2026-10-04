@@ -22,7 +22,8 @@ docs/                  architecture, RPC contract, ADRs
 3. `docs/api.md` — the shared RPC and read contract for future live clients.
 4. `docs/adr/0001-native-clients.md`, `docs/adr/0002-supabase-first.md` — the two
    decisions that depart from the original specification, and their costs.
-5. `mobile/README.md` — how to open and run the Flutter preview.
+5. `docs/deployment.md` — the one-origin image, and what you must supply to deploy it.
+6. `mobile/README.md` — how to open and run the Flutter preview.
 
 ## Two rules the codebase is built around
 
