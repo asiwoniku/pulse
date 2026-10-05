@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Pulse">
+  <!-- Pulse's own mark, shown beside a partner's in the workspace switcher.
+       Drawn with currentColor so it inherits whatever the shell's theme uses,
+       and sized for 20px display where a detailed glyph would turn to mush. -->
+  <rect width="32" height="32" rx="8" fill="#176B64" />
+  <path d="M6 18h5l2.5-7 4 14 3-9 2 2h3.5"
+        fill="none" stroke="#DBF1E9" stroke-width="2.5"
+        stroke-linecap="round" stroke-linejoin="round" />
+</svg>

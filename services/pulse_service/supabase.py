@@ -8,6 +8,9 @@ reported in /api/status so nobody has to guess whether the portal is bypassing R
 """
 from __future__ import annotations
 
+import base64
+import binascii
+import uuid
 from typing import Any
 
 from .config import Config
@@ -154,6 +157,65 @@ class Supabase:
             payload=payload,
         )
         return self._unwrap(status, body, f"update {table}")
+
+    def upload_logo(
+        self, business_id: str, filename: str, content_type: str, data: bytes, token: str
+    ) -> str:
+        """Stores a partner's mark and returns the public path.
+
+        The path is ``<business_id>/<uuid>.<ext>`` rather than the filename the
+        person uploaded. A filename is attacker-supplied text that would end up in a
+        URL, and two partners uploading "logo.png" must not overwrite each other.
+        """
+        self._require(token)
+        if not data:
+            raise ServiceError("The uploaded file was empty.", source="storage")
+        # 512 kB matches the bucket's own limit, checked here so the refusal is
+        # immediate and named rather than a 413 from someone else's edge.
+        if len(data) > 524_288:
+            raise ServiceError(
+                "That image is larger than 512 kB. Export a smaller logo.",
+                status=413,
+                source="storage",
+            )
+        allowed = {
+            "image/png": ".png",
+            "image/jpeg": ".jpg",
+            "image/webp": ".webp",
+        }
+        ext = allowed.get(content_type.strip().lower())
+        if not ext:
+            raise ServiceError(
+                "Logos must be PNG, JPEG or WebP.",
+                status=415,
+                source="storage",
+            )
+
+        key = f"{business_id}/{uuid.uuid4().hex}{ext}"
+        status, body = http_json(
+            "POST",
+            f"{self.cfg.supabase_url}/storage/v1/object/business-logos/{key}",
+            provider="supabase-storage",
+            headers={
+                "apikey": self.cfg.anon_key,
+                "Authorization": f"Bearer {token}",
+                "Content-Type": content_type,
+                "x-upsert": "false",
+            },
+            payload=data,
+            raw=True,
+        )
+        if not 200 <= status < 300:
+            raise ServiceError(
+                message_from(body)
+                or f"The logo could not be stored (status {status}).",
+                status=status if status < 500 else 502,
+                source="supabase-storage",
+            )
+        return key
+
+    def storage_public_url(self, key: str) -> str:
+        return f"{self.cfg.supabase_url}/storage/v1/object/public/business-logos/{key}"
 
     def _unwrap(self, status: int, body: Any, label: str) -> Any:
         if 200 <= status < 300:

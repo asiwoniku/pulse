@@ -67,12 +67,17 @@ def http_json(
     payload: Any | None = None,
     query: dict[str, Any] | None = None,
     timeout: float = 15.0,
+    raw: bool = False,
 ) -> tuple[int, Any]:
     """Call an HTTP JSON API and return (status, decoded body).
 
     Non-2xx is returned, not raised, so callers can distinguish 'the provider said
     no' from 'the provider is unreachable' — the second one is a transport failure
-    and raises ServiceError with the provider's name attached."""
+    and raises ServiceError with the provider's name attached.
+
+    `raw=True` sends `payload` as bytes instead of JSON-encoding it. That exists for
+    the storage upload, where the body *is* the image; everything else speaks JSON
+    and should leave it alone."""
     if query:
         pairs = {
             key: value
@@ -87,8 +92,11 @@ def http_json(
     request_headers = {"Accept": "application/json", "User-Agent": USER_AGENT}
     request_headers.update(headers or {})
     if payload is not None:
-        data = json.dumps(payload).encode("utf-8")
-        request_headers["Content-Type"] = "application/json"
+        if raw:
+            data = payload if isinstance(payload, bytes) else str(payload).encode("utf-8")
+        else:
+            data = json.dumps(payload).encode("utf-8")
+            request_headers["Content-Type"] = "application/json"
 
     request = urllib.request.Request(url, data=data, headers=request_headers, method=method)
     try:

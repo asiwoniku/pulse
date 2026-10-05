@@ -123,6 +123,34 @@ function OrgSwitcher() {
       <label className="sr-only" htmlFor="org-switcher">
         Active workspace
       </label>
+      {/* The partner's own mark sits beside Pulse's wordmark. This is the whole
+          point of the setting: a dispatcher should recognise their company before
+          they recognise the software. It is decorative — a broken image falls back
+          to the name rather than showing a torn page. */}
+      <div className="org__brand">
+        <img
+          className="org__logo"
+          src="/brand/pulse.svg"
+          alt=""
+          width={20}
+          height={20}
+        />
+        {activeBusiness?.logo_url ? (
+          <>
+            <span className="org__divider" aria-hidden="true">
+              ·
+            </span>
+            <img
+              className="org__logo"
+              src={activeBusiness.logo_url}
+              alt=""
+              onError={(e) => {
+                e.currentTarget.style.display = 'none'
+              }}
+            />
+          </>
+        ) : null}
+      </div>
       <div className="org__control">
         <select
           id="org-switcher"

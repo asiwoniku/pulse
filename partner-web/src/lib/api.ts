@@ -313,6 +313,8 @@ export interface Business {
   country_code: string | null
   currency: string | null
   kind: string | null
+  /** The partner's own mark (migration 0025). Null until one is uploaded. */
+  logo_url: string | null
   is_active: boolean
   my_role: string | null
 }
@@ -712,6 +714,71 @@ export const geo = {
       '/api/geo/geocode',
       { text },
     ),
+}
+
+/** A driver's issued login, returned exactly once. */
+export interface IssuedDriver {
+  driver_id: string
+  staff_id: string
+  email: string
+}
+
+export interface IssuedCredentials {
+  staff_id: string
+  password: string
+  note: string
+}
+
+/**
+ * Partner branding and driver accounts.
+ *
+ * These two are the only writes in this client that go to the service rather than
+ * through an allow-listed RPC. Issuing a driver login has to create an auth
+ * account, which needs the service-role key — so it can only happen on the server,
+ * and it is deliberately not something a browser can call directly.
+ */
+export const partner = {
+  /**
+   * Uploads the workspace's own mark.
+   *
+   * The file is read in the browser and sent base64-encoded rather than as a
+   * multipart body: the WSGI layer already parses a JSON body everywhere else, so
+   * this keeps one content type rather than adding a second path to get wrong.
+   */
+  uploadLogo: async (businessId: string, file: File): Promise<{ logo_url: string }> => {
+    const base64 = await fileToBase64(file);
+    return post<{ logo_url: string }>(
+      `/api/businesses/${encodeURIComponent(businessId)}/logo`,
+      { content_type: file.type, data_base64: base64 },
+    )
+  },
+
+  /** Issues a driver a staff ID and password. Shown once; it is never retrievable. */
+  issueDriver: (input: {
+    business_id: string
+    full_name: string
+    phone_e164?: string
+    password: string
+    staff_prefix?: string
+  }) =>
+    post<{ driver: IssuedDriver; credentials: IssuedCredentials }>(
+      '/api/drivers',
+      input,
+    ),
+}
+
+/** Strips the `data:...;base64,` prefix a FileReader produces. */
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () =>
+      reject(new ApiError(0, 'That file could not be read.', 'client', null));
+    reader.onload = () => {
+      const result = String(reader.result ?? '');
+      resolve(result.includes(',') ? result.split(',')[1] : result);
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 export const system = {

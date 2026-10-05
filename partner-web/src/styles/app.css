@@ -1167,6 +1167,49 @@ code,
   transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
 }
 
+/* --- partner branding ------------------------------------------------ */
+.org__brand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.org__logo {
+  /* Square-ish and contained: a partner's logo can be any proportion, and this
+     keeps an unusually wide mark from pushing the workspace name out of line. */
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 1px;
+}
+
+.org__divider { color: var(--muted, #9aa6b6); }
+
+.logo-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 96px;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border: 1px dashed var(--border, rgba(255, 255, 255, 0.14));
+  border-radius: 10px;
+  background: var(--surface, #12161d);
+}
+
+.logo-preview img {
+  max-height: 72px;
+  max-width: 220px;
+  object-fit: contain;
+}
+
+.logo-preview__empty {
+  color: var(--muted, #9aa6b6);
+  font-size: 0.8125rem;
+}
+
 /* --- address type-ahead ------------------------------------------------- */
 .address-field {
   position: relative;

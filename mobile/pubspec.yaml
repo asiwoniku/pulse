@@ -31,6 +31,20 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # Live Supabase access. The app talks to PostgREST/Auth/Realtime directly, the
+  # same way ADR-002 specifies — there is no application server in front of it, and
+  # Postgres row-level security is what decides which rows come back.
+  supabase_flutter: ^2.8.0
+
+  # Session storage. A user access token is a bearer credential, so it belongs in
+  # the platform keystore rather than in shared preferences, where any other app
+  # or a rooted device could read it.
+  flutter_secure_storage: ^9.2.2
+
+  # Opens the system browser for Supabase's OAuth round trip (Google sign-in).
+  # This is why Google sign-in does not need a copy of Google's SDK in the app.
+  url_launcher: ^6.3.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -3,6 +3,7 @@ import { useSession } from '../state/session'
 import { workspace as wsApi } from '../lib/api'
 import { useAction } from '../state/useQuery'
 import { Banner, PageHeader, Panel } from '../components/ui'
+import { IssueDriverPanel, LogoPanel } from './BrandingPanels'
 
 /**
  * Workspace creation and account settings.
@@ -124,6 +125,19 @@ export function SettingsPage() {
             <div className="row-actions"><button className="btn btn--primary" type="submit" disabled={updateProfile.pending || profile.name.trim().length < 2}>{updateProfile.pending ? 'Saving…' : 'Save company profile'}</button></div>
           </form>
         </Panel>
+      ) : null}
+      {activeBusiness ? (
+        <>
+          {/* Branding and driver logins live beside the company profile because
+              they are the same concern: making this workspace look and work like
+              the partner's own operation. */}
+          <LogoPanel
+            businessId={activeBusiness.id}
+            logoUrl={activeBusiness.logo_url ?? null}
+            onSaved={refreshBusinesses}
+          />
+          <IssueDriverPanel businessId={activeBusiness.id} />
+        </>
       ) : null}
 <Panel
         title="Create a workspace"

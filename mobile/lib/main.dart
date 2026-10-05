@@ -6,11 +6,78 @@ import 'screens/driver_screen.dart';
 import 'screens/network_screen.dart';
 import 'screens/orders_screen.dart';
 import 'screens/shipments_screen.dart';
+import 'screens/configuration_screen.dart';
+import 'screens/live_app.dart';
 import 'theme.dart';
 import 'widgets.dart';
+import 'data/pulse_data.dart';
 
 void main() {
   runApp(kReleaseMode ? const PulseBuildGate() : const PulseApp());
+}
+
+/// Decides, once, which app to show.
+///
+/// Three outcomes, and the order matters:
+///  1. Release build -> the existing gate (unchanged).
+///  2. Configured    -> `LivePulseApp`, which talks to Postgres.
+///  3. Not configured -> the configuration screen, which names the missing flags.
+///
+/// The point of (3) is that the app never falls back to sample rows while claiming
+/// to be live. `PulseApp` below is the existing offline preview and stays reachable
+/// through an explicit button on the configuration screen, clearly labelled — so the
+/// demo can be reviewed on a device, but never by accident.
+class PulseBootstrap extends StatefulWidget {
+  const PulseBootstrap({super.key});
+
+  @override
+  State<PulseBootstrap> createState() => _PulseBootstrapState();
+}
+
+class _PulseBootstrapState extends State<PulseBootstrap> {
+  late Future<PulseData?> _future = PulseData.bootstrap();
+
+  void _retry() => setState(() => _future = PulseData.bootstrap());
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<PulseData?>(
+      future: _future,
+      builder: (BuildContext context, AsyncSnapshot<PulseData?> snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const MaterialApp(
+            debugShowCheckedModeBanner: false,
+            home: Scaffold(body: Center(child: CircularProgressIndicator())),
+          );
+        }
+        if (snapshot.hasError) {
+          return MaterialApp(
+            debugShowCheckedModeBanner: false,
+            home: Scaffold(
+              body: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    'Pulse could not start:\n${snapshot.error}',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+
+        final data = snapshot.data;
+        if (data == null) {
+          return MaterialApp(
+            debugShowCheckedModeBanner: false,
+            home: ConfigurationScreen(onRetry: _retry),
+          );
+        }
+        return PulseWorkspaceApp(data: data);
+      },
+    );
+  }
 }
 
 class PulseApp extends StatelessWidget {

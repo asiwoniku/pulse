@@ -1226,6 +1226,116 @@ def _rpc(request: Request) -> tuple[int, Any]:
     return 201, request.db().rpc(name, request.body, request.need_token())
 
 
+@route("POST /api/businesses/{business_id}/logo")
+def _business_logo(request: Request) -> tuple[int, Any]:
+    """Upload the workspace's own mark and store its path on the business.
+
+    The image arrives base64-encoded as JSON rather than as a multipart body: the
+    WSGI layer already parses a JSON body for every other route, and keeping one
+    shape means there is no second content-type path to get wrong.
+
+    Size and type are checked here *and* by the bucket, so the refusal names the
+    problem instead of surfacing as an opaque storage error.
+    """
+    token = request.need_token()
+    business_id = request.params["business_id"]
+
+    content_type = str(request.body.get("content_type") or "")
+    raw = str(request.body.get("data_base64") or "")
+    if not raw:
+        raise ServiceError(
+            "No image was supplied. Send data_base64 with the file.",
+            source="storage",
+        )
+
+    # A data: URL prefix is common in browser output and is not base64 itself.
+    if raw.startswith("data:") and "," in raw:
+        raw = raw.split(",", 1)[1]
+    try:
+        data = base64.b64decode(raw, validate=True)
+    except (binascii.Error, ValueError) as error:
+        raise ServiceError(
+            "The image data could not be decoded; it may be corrupt.",
+            source="storage",
+        ) from error
+
+    db = request.db()
+    key = db.upload_logo(business_id, "", content_type, data, token)
+
+    # The path is written with the caller's own token, so the same
+    # businesses_update_owner policy that already guards the rest of the company
+    # profile governs the logo. Nothing here widens access.
+    db.patch_row(
+        "businesses",
+        f"id=eq.{business_id}",
+        {"logo_url": db.storage_public_url(key)},
+        token,
+    )
+
+    return 200, {
+        "logo_url": db.storage_public_url(key),
+        "key": key,
+        "bytes": len(data),
+        "note": "Shown beside Pulse's own mark. Display only — it grants no access.",
+    }
+
+
+@route("POST /api/drivers")
+def _issue_driver(request: Request) -> tuple[int, Any]:
+    """Issue a driver a staff ID and password.
+
+    The account is created here, server-side, with the service-role key — which is
+    exactly what that key is for. It is deliberately *not* on the client RPC
+    allow-list: a browser must never be able to mint itself an account.
+
+    The password is returned once and never stored in readable form (Postgres holds
+    only a bcrypt hash), so if it is lost it has to be reset, not looked up.
+    """
+    token = request.need_token()
+    if not request.cfg.service_role_key:
+        raise ServiceError(
+            "Issuing driver logins needs SUPABASE_SERVICE_ROLE_KEY on the server. "
+            "Nothing was created.",
+            status=503,
+            source="supabase",
+        )
+
+    business_id = str(request.body.get("business_id") or "").strip()
+    full_name = str(request.body.get("full_name") or "").strip()
+    phone = str(request.body.get("phone_e164") or "").strip()
+    password = str(request.body.get("password") or "")
+    prefix = request.body.get("staff_prefix")
+
+    if not business_id:
+        raise ServiceError("business_id is required.", source="pulse")
+
+    rows = request.db().rpc(
+        "issue_staff_login",
+        {
+            "p_business_id": business_id,
+            "p_full_name": full_name,
+            "p_phone_e164": phone or None,
+            "p_password": password,
+            "p_staff_prefix": str(prefix) if prefix else None,
+        },
+        token,
+        service=True,
+    )
+
+    created = rows[0] if isinstance(rows, list) and rows else {}
+    return 201, {
+        "driver": created,
+        # Shown exactly once. Pulse keeps only the hash, so there is nothing to
+        # retrieve later — say that plainly rather than implying it can be resent.
+        "credentials": {
+            "staff_id": created.get("staff_id"),
+            "password": password,
+            "note": "Write this down now. Pulse stores only a hash, so the password "
+            "cannot be shown again — reset it instead.",
+        },
+    }
+
+
 @route("PATCH /api/orders/{order_id}")
 def _patch_order(request: Request) -> tuple[int, Any]:
     """Status and money columns go to Postgres as an update; the 0006/0010 triggers
