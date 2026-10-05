@@ -58,10 +58,23 @@ export function clearSession(): void {
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const method = (init.method ?? 'GET').toUpperCase()
 
-  // Demo mode intercepts reads only. A write is refused outright rather than sent
-  // or faked, so nothing in a demo session can touch the real database and no click
-  // can look like it saved something.
-  if (isDemoMode() && method !== 'GET') demoWriteRefusal()
+  // Demo mode intercepts reads only. Address lookup is the one POST that writes
+  // nothing — it is modelled as POST because the query is free text — so it is
+  // answered from fixtures rather than refused. Every other write is refused
+  // outright rather than sent or faked, so no demo click can touch the real
+  // database and nothing can look like it saved something.
+  if (isDemoMode() && method !== 'GET') {
+    if (path === '/api/geo/suggest') {
+      let query = ''
+      try {
+        query = String((JSON.parse(String(init.body ?? '{}')) as { text?: string }).text ?? '')
+      } catch {
+        query = ''
+      }
+      return { provider: 'demo', query, candidates: demo.suggest(query) } as T
+    }
+    demoWriteRefusal()
+  }
   if (isDemoMode() && method === 'GET') {
     const fixture = demoFetch(path)
     if (fixture !== null) return fixture as T
@@ -673,6 +686,32 @@ export interface ServiceStatus {
   supabase_url_present: boolean
   using_service_role: boolean
   providers: ProviderStatus[]
+}
+
+export interface AddressCandidate {
+  label: string
+  lat: number
+  lng: number
+  kind?: string
+  provider?: string
+}
+
+/**
+ * Ranked address candidates while a field is still being typed. An empty
+ * `candidates` list is a real answer, not an error: it means the provider matched
+ * nothing yet, and the field stays freely editable either way.
+ */
+export const geo = {
+  suggest: (text: string, limit = 8) =>
+    post<{ provider: string; query: string; candidates: AddressCandidate[]; note?: string }>(
+      '/api/geo/suggest',
+      { text, limit },
+    ),
+  geocode: (text: string) =>
+    post<{ provider: string; query: string; lat: number; lng: number; display_name: string | null }>(
+      '/api/geo/geocode',
+      { text },
+    ),
 }
 
 export const system = {

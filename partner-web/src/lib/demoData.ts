@@ -143,6 +143,31 @@ export const demo = {
   pendingInvitations: () => [
     { id: 'demo-inv1', email: 'new.hire@example.com', role: 'driver', status: 'pending', expires_at: stamp(-4320) },
   ],
+  /** Sample candidates so the type-ahead can be reviewed without a maps key.
+   *  Matched loosely on the query so any prefix produces something plausible. */
+  suggest: (text: string) => {
+    const q = text.trim().toLowerCase()
+    const pool = [
+      '12 Adeola Odeku, Victoria Island, Lagos, Nigeria',
+      '15 Ozumba Mbadiwe Avenue, Ikoyi, Lagos, Nigeria',
+      '24 Allen Avenue, Ikeja, Lagos, Nigeria',
+      'Wuse II, Abuja, FCT, Nigeria',
+      'Apapa Wharf, Lagos, Nigeria',
+      'Lekki Phase 1, Lagos, Nigeria',
+      'Third Mainland Bridge, Lagos, Nigeria',
+      'Port Harcourt Depot, Rivers, Nigeria',
+      'Ikeja City Mall, Lagos, Nigeria',
+    ]
+    const hits = pool.filter((p) => p.toLowerCase().includes(q) || q.split(' ').some((w) => w.length > 2 && p.toLowerCase().includes(w)))
+    return hits.slice(0, 8).map((label, i) => ({
+      label,
+      lat: 6.4 + i * 0.05,
+      lng: 3.3 + i * 0.05,
+      kind: 'address',
+      provider: 'demo',
+    }))
+  },
+
   shipments: () => [
     { id: 'demo-s1', pulse_shipment_id: 'PLS-DEMO-0004', business_id: DEMO_BUSINESS.id, originator_business_id: null, current_status: 'assigned', order_id: 'demo-o4', created_at: stamp(120), last_event_received_at: stamp(10), last_verified_event_at: stamp(10), last_verified_location: 'Lekki Phase 1', order: { reference: 'PLS-0004' } },
     { id: 'demo-s2', pulse_shipment_id: 'PLS-DEMO-0006', business_id: DEMO_BUSINESS.id, originator_business_id: null, current_status: 'in_transit', order_id: 'demo-o6', created_at: stamp(240), last_event_received_at: stamp(40), last_verified_event_at: stamp(40), last_verified_location: 'Third Mainland Bridge', order: { reference: 'PLS-0006' } },

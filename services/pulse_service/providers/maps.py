@@ -73,6 +73,146 @@ def geocode(cfg: Config, text: str) -> dict[str, Any]:
     return _geo_nominatim(cfg, query)
 
 
+def suggest(cfg: Config, text: str, limit: int = 8) -> dict[str, Any]:
+    """Address candidates for type-ahead lookup.
+
+    `geocode` answers "where is this exact string" and commits to one point, which
+    is the wrong shape for a field someone is still typing: a half-written street
+    name frequently resolves to the wrong district, and a silent wrong pin is worse
+    than no pin. This returns several ranked candidates and never picks one, so the
+    person dispatching stays the one who decides where the load actually goes.
+
+    An empty list is a real answer — it means the provider matched nothing yet — and
+    is deliberately not turned into an error the way `geocode` is.
+    """
+    query = (text or "").strip()
+    if len(query) < 3:
+        return {"provider": cfg.maps_provider, "query": query, "candidates": [], "note": "Type at least 3 characters."}
+
+    provider = cfg.maps_provider
+    if provider == "mapbox":
+        candidates = _suggest_mapbox(cfg, query, limit)
+    elif provider == "google":
+        candidates = _suggest_google(cfg, query, limit)
+    elif provider == "osrm":
+        # OSRM routes but cannot geocode at all. Say that once, plainly, instead of
+        # silently returning nothing and looking like "no matches".
+        return {
+            "provider": "osrm",
+            "query": query,
+            "candidates": [],
+            "note": "Address lookup is off because MAPS_PROVIDER=osrm, which routes but "
+            "cannot geocode. Use nominatim, mapbox or google for suggestions.",
+        }
+    else:
+        candidates = _suggest_nominatim(cfg, query, limit)
+
+    return {"provider": provider, "query": query, "candidates": candidates}
+
+
+def _suggest_nominatim(cfg: Config, query: str, limit: int) -> list[dict[str, Any]]:
+    user_agent = cfg.get("NOMINATIM_USER_AGENT")
+    if not user_agent:
+        raise unconfigured("maps:nominatim", ["NOMINATIM_USER_AGENT"])
+    _throttle_nominatim()
+    status, body = http_json(
+        "GET",
+        NOMINATIM,
+        provider="maps:nominatim",
+        headers={"User-Agent": user_agent},
+        query={
+            "q": query,
+            "format": "jsonv2",
+            "addressdetails": 1,
+            # The public usage policy allows at most one request per second, which
+            # _throttle_nominatim already enforces. This caps blast radius instead.
+            "limit": max(1, min(limit, 10)),
+            "countrycodes": cfg.get("GEO_COUNTRY_CODES") or None,
+        },
+    )
+    if status != 200 or not isinstance(body, list):
+        return []
+    return [
+        {
+            "label": hit.get("display_name") or query,
+            "lat": float(hit["lat"]),
+            "lng": float(hit["lon"]),
+            "kind": (hit.get("type") or "place"),
+            "provider": "nominatim",
+        }
+        for hit in body
+        if hit.get("lat") and hit.get("lon")
+    ]
+
+
+def _suggest_mapbox(cfg: Config, query: str, limit: int) -> list[dict[str, Any]]:
+    token = _token(cfg, "MAPBOX_ACCESS_TOKEN", "mapbox", "MAPS_API_KEY")
+    # Mapbox has a purpose-built autocomplete endpoint; using /geocode here would
+    # return fuzzy matches ranked for a single answer, which is the wrong shape.
+    status, body = http_json(
+        "GET",
+        "https://api.mapbox.com/geocoding/v5/mapbox.places-autocomplete/{q}.json".format(
+            q=query.replace(" ", "%20")
+        ),
+        provider="maps:mapbox",
+        query={
+            "access_token": token,
+            "autocomplete": "true",
+            "limit": max(1, min(limit, 10)),
+            "country": cfg.get("GEO_COUNTRY_CODES") or None,
+        },
+    )
+    if status != 200 or not isinstance(body, dict):
+        return []
+    out = []
+    for feature in body.get("features") or []:
+        centre = feature.get("center") or []
+        if len(centre) < 2:
+            continue
+        out.append(
+            {
+                "label": feature.get("place_name") or query,
+                "lat": float(centre[1]),
+                "lng": float(centre[0]),
+                "kind": (feature.get("place_type") or ["place"])[0]
+                if feature.get("place_type")
+                else "place",
+                "provider": "mapbox",
+            }
+        )
+    return out
+
+
+def _suggest_google(cfg: Config, query: str, limit: int) -> list[dict[str, Any]]:
+    key = _token(cfg, "GOOGLE_MAPS_API_KEY", "google", "MAPS_API_KEY")
+    # Google has no public place-autocomplete on the geocoding endpoint, so this is
+    # the same call as geocode with a result cap. It is marked as such in the
+    # response so nobody assumes the ranked-autocomplete behaviour of Mapbox.
+    status, body = http_json(
+        "GET",
+        GOOGLE_GEO,
+        provider="maps:google",
+        query={"address": query, "key": key},
+    )
+    if status != 200 or not isinstance(body, dict):
+        return []
+    out = []
+    for item in (body.get("results") or [])[: max(1, min(limit, 10))]:
+        location = item.get("geometry", {}).get("location") or {}
+        if "lat" not in location or "lng" not in location:
+            continue
+        out.append(
+            {
+                "label": item.get("formatted_address") or query,
+                "lat": float(location["lat"]),
+                "lng": float(location["lng"]),
+                "kind": (item.get("types") or ["place"])[0],
+                "provider": "google",
+            }
+        )
+    return out
+
+
 def route(cfg: Config, origin: dict[str, Any], destination: dict[str, Any]) -> dict[str, Any]:
     """Distance and ETA between two geocoded points."""
     for point, label in ((origin, "origin"), (destination, "destination")):

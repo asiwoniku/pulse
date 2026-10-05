@@ -4,6 +4,7 @@ import { ApiError, operations, type Order } from '../lib/api'
 import { useAction } from '../state/useQuery'
 import { useSession } from '../state/session'
 import { Banner, PageHeader, Panel } from '../components/ui'
+import { AddressInput } from '../components/AddressInput'
 
 /**
  * Create shipment — a guided multi-step form rather than one long wall of inputs.
@@ -31,7 +32,7 @@ const EMPTY: Draft = {
   pickup_text: '',
   destination_text: '',
   description: '',
-  service_type: 'standard',
+  service_type: 'delivery',
   price_amount: '',
 }
 
@@ -193,26 +194,22 @@ if (created) {
 
           {step === 1 ? (
             <div className="grid grid--2">
-              <div className="field">
-                <label htmlFor="pickup">Pickup address</label>
-                <input
-                  id="pickup"
-                  className="input"
-                  value={draft.pickup_text}
-                  onChange={(e) => set('pickup_text', e.target.value)}
-                  required
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="destination">Destination address</label>
-                <input
-                  id="destination"
-                  className="input"
-                  value={draft.destination_text}
-                  onChange={(e) => set('destination_text', e.target.value)}
-                  required
-                />
-              </div>
+              <AddressInput
+                id="pickup"
+                label="Pickup address"
+                value={draft.pickup_text}
+                onChange={(v) => set('pickup_text', v)}
+                placeholder="Start typing a street, landmark or area"
+                required
+              />
+              <AddressInput
+                id="destination"
+                label="Destination address"
+                value={draft.destination_text}
+                onChange={(v) => set('destination_text', v)}
+                placeholder="Start typing a street, landmark or area"
+                required
+              />
               <div className="field field--full">
                 <label htmlFor="description">Description / contents</label>
                 <textarea
@@ -260,10 +257,17 @@ if (created) {
                   value={draft.service_type}
                   onChange={(e) => set('service_type', e.target.value)}
                 >
-                  <option value="standard">Standard</option>
-                  <option value="express">Express</option>
-                  <option value="same_day">Same day</option>
-                  <option value="freight">Freight</option>
+                  {/* These are the four values migration 0018 permits on
+                      `orders.service_type`. The list used to offer standard /
+                      express / same_day, none of which the check constraint
+                      accepts, so every one of those shipments was rejected by
+                      Postgres. `delivery` and `moving` are the same lifecycle —
+                      the database has one state machine — so "what kind of job is
+                      this" is carried by the type, not by a second workflow. */}
+                  <option value="delivery">Delivery — a parcel or courier job</option>
+                  <option value="moving">Moving — household or office relocation</option>
+                  <option value="errand">Errand — document, key or small item</option>
+                  <option value="freight">Freight — pallet, bulk or cargo</option>
                 </select>
               </div>
               <div className="field">

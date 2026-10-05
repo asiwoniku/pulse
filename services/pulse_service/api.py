@@ -216,6 +216,24 @@ def _geocode(request: Request) -> tuple[int, Any]:
     return 200, maps.geocode(request.cfg, str(request.body.get("text") or ""))
 
 
+@route("POST /api/geo/suggest")
+def _geo_suggest(request: Request) -> tuple[int, Any]:
+    """Ranked address candidates for a field someone is still typing.
+
+    No token is required: a partially typed street name carries no workspace
+    context, and requiring sign-in here would only stop a dispatcher from finding
+    a street. Nothing is written and no account data is read, so the only cost is
+    a provider call.
+    """
+    text = str(request.body.get("text") or "")
+    raw_limit = request.body.get("limit")
+    try:
+        limit = int(raw_limit) if raw_limit is not None else 8
+    except (TypeError, ValueError):
+        limit = 8
+    return 200, maps.suggest(request.cfg, text, max(1, min(limit, 10)))
+
+
 @route("POST /api/geo/route")
 def _route_eta(request: Request) -> tuple[int, Any]:
     cfg = request.cfg
