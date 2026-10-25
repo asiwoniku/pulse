@@ -1,4 +1,16 @@
-import { ApiError } from './api'
+export class ApiError {
+  status: number
+  message: string
+  source: string | null
+  detail: unknown
+
+  constructor(status: number, message: string, source: string | null, detail: unknown) {
+    this.status = status
+    this.message = message
+    this.source = source
+    this.detail = detail
+  }
+}
 
 interface RequestInitExtra {
   method?: string
