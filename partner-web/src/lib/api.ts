@@ -438,3 +438,45 @@ export interface OrdersList {
   orders: Order[]
   has_more: boolean
 }
+
+/* ------------------------------------------------------------------ */
+/* Operations                                                         */
+/* ------------------------------------------------------------------ */
+
+export const operations = {
+  createVehicle: () => get<Record<string, unknown>>('/api/rpc/create_vehicle'),
+  carriers: () => get<Record<string, unknown>>('/api/rpc/carriers'),
+  offers: (id: string) => get<Record<string, unknown>>(`/api/rpc/offers/${id}`),
+  createOffer: (input: Record<string, unknown>) =>
+    post<Record<string, unknown>>('/api/rpc/create_offer', input),
+  respondToOffer: (offerId: string, input: Record<string, unknown>) =>
+    post<Record<string, unknown>>(`/api/rpc/respond_to_offer/${offerId}`, input),
+  withdrawOffer: (offerId: string) =>
+    post<Record<string, unknown>>(`/api/rpc/withdraw_offer/${offerId}`, {}),
+  board: (input: Record<string, unknown>) => post<Record<string, unknown>>('/api/rpc/board', input),
+  listShipments: (businessId: string) =>
+    get<ShipmentsList>(
+      `/api/businesses/${encodeURIComponent(businessId)}/shipments`,
+    ),
+  detail: (shipmentId: string) => get<Shipment>(`/api/shipments/${shipmentId}`),
+  recordEvent: (input: Record<string, unknown>) =>
+    post<Record<string, unknown>>('/api/rpc/record_event', input),
+  listOrders: (businessId: string) =>
+    get<OrdersList>(
+      `/api/businesses/${encodeURIComponent(businessId)}/orders`,
+    ),
+  createOrder: (input: Record<string, unknown>) =>
+    post<Record<string, unknown>>('/api/rpc/create_order', input),
+};
+
+/* ------------------------------------------------------------------ */
+/* Shipments                                                          */
+/* ------------------------------------------------------------------ */
+
+export const shipments = {
+  list: (businessId: string) =>
+    get<ShipmentsList>(
+      `/api/businesses/${encodeURIComponent(businessId)}/shipments`,
+    ),
+  detail: (shipmentId: string) => get<Shipment>(`/api/shipments/${shipmentId}`),
+};
