@@ -5,6 +5,7 @@ import { SessionProvider, useSession } from './state/session'
 import { system, isDemoMode, DEMO_MESSAGE } from './lib/api'
 import { Banner } from './components/ui'
 import { SignInPage } from './pages/SignInPage'
+import { saveSession } from './lib/api'
 import { OverviewPage } from './pages/OverviewPage'
 import { ShipmentsPage } from './pages/ShipmentsPage'
 import { ShipmentDetailPage } from './pages/ShipmentDetailPage'
@@ -80,6 +81,60 @@ function AppLayout() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [drawer])
+
+  // After a social sign-in, Supabase redirects back here with the session in the
+  // URL fragment (implicit flow) or query string (code flow). Capture it, persist
+  // it as the app's session, then strip the auth params from the URL so a refresh
+  // doesn't re-trigger the flow.
+  useEffect(() => {
+    const hash = window.location.hash.slice(1)
+    const params = new URLSearchParams(hash)
+    const accessToken = params.get('access_token')
+    const refreshToken = params.get('refresh_token')
+    const expiresIn = params.get('expires_in')
+
+    if (accessToken) {
+      const next: { access_token: string; refresh_token: string | null; expires_in: number | null; user_id: string; email: string } = {
+        access_token: accessToken,
+        refresh_token: refreshToken ?? null,
+        expires_in: expiresIn ? Number(expiresIn) : null,
+        user_id: '',
+        email: '',
+      }
+      saveSession(next)
+      window.history.replaceState({}, document.title, window.location.pathname)
+      window.location.reload()
+      return
+    }
+
+    // Code flow: exchange the code via the backend.
+    const urlParams = new URLSearchParams(window.location.search)
+    const code = urlParams.get('code')
+    if (code) {
+      // The backend endpoint exchanges the code for a session.
+      fetch('/api/auth/oauth/callback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      })
+        .then(async (r) => {
+          if (!r.ok) throw new Error('callback failed')
+          const data = await r.json()
+          saveSession({
+            access_token: data.access_token,
+            refresh_token: data.refresh_token ?? null,
+            expires_in: data.expires_in ?? null,
+            user_id: data.user_id ?? '',
+            email: data.email ?? '',
+          })
+          window.history.replaceState({}, document.title, window.location.pathname)
+          window.location.reload()
+        })
+        .catch(() => {
+          // Ignore — the sign-in page will show its own error.
+        })
+    }
+  }, [])
 
   if (!session) return <SignInPage />
 

@@ -6,6 +6,7 @@ import {
   demo,
   isDemoMode,
   loadSession,
+  oauthStart,
   saveSession,
   workspace,
   type Business,
@@ -35,6 +36,7 @@ interface SessionState {
     email: string,
     password: string,
   ) => Promise<{ needsConfirmation: boolean; note?: string }>
+  signInWithGoogle: () => Promise<void>
   signOut: () => void
   selectBusiness: (id: string) => void
   refreshBusinesses: () => void
@@ -139,6 +141,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         saveSession(next)
         setSession(next)
         return { needsConfirmation: false }
+      },
+      async signInWithGoogle() {
+        const { authorization_url } = await oauthStart('google')
+        // Navigate the browser to the Supabase authorize URL. Supabase will
+        // redirect back here with a session cookie / URL params after the user
+        // signs in with Google.
+        window.location.href = authorization_url
       },
       signOut() {
         clearSession()

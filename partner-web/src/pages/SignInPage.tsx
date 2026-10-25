@@ -12,7 +12,7 @@ import { IconBox } from '../components/icons'
  * navigating into an app the user cannot actually use.
  */
 export function SignInPage() {
-  const { signIn, signUp } = useSession()
+  const { signIn, signUp, signInWithGoogle } = useSession()
   const [mode, setMode] = useState<'signin' | 'signup'>('signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -123,6 +123,16 @@ export function SignInPage() {
               <span aria-hidden="true">→</span>
             </button>
           </form>
+
+          <button
+            type="button"
+            className="btn btn--secondary"
+            disabled={busy}
+            onClick={() => void signInWithGoogle()}
+          >
+            Sign in with Google
+            <span aria-hidden="true">â†’</span>
+          </button>
 
           <p className="auth__switch">
             {mode === 'signin' ? 'New to Pulse? ' : 'Already registered? '}

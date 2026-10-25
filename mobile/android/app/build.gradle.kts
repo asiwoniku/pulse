@@ -9,9 +9,10 @@ android {
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
-    // Required for the per-flavor buildConfigField values below.
+    // Required for the per-flavor buildConfigField and resValue values below.
     buildFeatures {
         buildConfig = true
+        resValues = true
     }
 
     compileOptions {

@@ -387,6 +387,30 @@ def _oauth_start(request: Request) -> tuple[int, Any]:
     }
 
 
+@route("POST /api/auth/oauth/callback")
+def _oauth_callback(request: Request) -> tuple[int, Any]:
+    """Exchange an authorization code returned by Supabase OAuth for a session."""
+    if not request.cfg.is_live("supabase"):
+        raise ServiceError(
+            "Social sign-in is unavailable until SUPABASE_URL and "
+            "SUPABASE_ANON_KEY are configured.",
+            status=503,
+            source="supabase-auth",
+        )
+    code = str(request.body.get("code") or "").strip()
+    if not code:
+        raise ServiceError("code is required.", status=400, source="supabase-auth")
+    session = request.db().auth.exchange_code_for_session(code)
+    user = session.user
+    return 200, {
+        "access_token": session.access_token,
+        "refresh_token": session.refresh_token,
+        "expires_in": session.expires_in,
+        "user_id": user.id if user else None,
+        "email": user.email if user else None,
+    }
+
+
 @route("POST /api/auth/signup")
 def _signup(request: Request) -> tuple[int, Any]:
     return 201, request.db().sign_up(
