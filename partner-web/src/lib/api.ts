@@ -1,14 +1,16 @@
-export class ApiError {
+﻿export class ApiError {
   status: number
   message: string
   source: string | null
   detail: unknown
+  isAuthFailure: boolean
 
-  constructor(status: number, message: string, source: string | null, detail: unknown) {
+  constructor(status: number, message: string, source: string | null, detail: unknown, isAuthFailure: boolean = false) {
     this.status = status
     this.message = message
     this.source = source
     this.detail = detail
+    this.isAuthFailure = isAuthFailure
   }
 }
 
@@ -100,13 +102,25 @@ export function setDemoMode(on: boolean): void {
 export const DEMO_MESSAGE =
   'Demo mode is on. Every record below is fictional and exists only in this browser \u2014 nothing was read from or written to the database.'
 
-export function demoWriteRefusal(): never {
-  throw new ApiError(
-    0,
-    'Demo mode is on, so nothing can be saved. Turn it off to write real records.',
-    'demo',
-    null,
-  )
+export function clearSession(): void {
+  window.localStorage.removeItem('pulse.session')
+}
+
+export function loadSession(): Session | null {
+  try {
+    const data = window.localStorage.getItem('pulse.session')
+    return data ? JSON.parse(data) : null
+  } catch {
+    return null
+  }
+}
+
+export function saveSession(session: Session): void {
+  try {
+    window.localStorage.setItem('pulse.session', JSON.stringify(session))
+  } catch {
+    /* Private browsing with storage disabled: simply not available. */
+  }
 }
 
 export function demoFetch(path: string): unknown | null {
@@ -222,13 +236,7 @@ export function demoFetch(path: string): unknown | null {
 /* Authentication                                                      */
 /* ------------------------------------------------------------------ */
 
-export interface Session {
-  access_token: string
-  refresh_token: string | null
-  expires_in: number | null
-  user_id: string
-  email: string
-}
+\n  user_id: string\n  email: string
 
 export interface SignUpResult {
   access_token: string | null
@@ -366,4 +374,67 @@ export interface MovingRequest {
   id: string
   business_id: string
   order_id: string | null
+}
+
+export interface Order {
+  id: string
+  business_id: string
+  status: string
+  current_status?: string
+  created_at?: string
+  updated_at?: string
+  delivered_at?: string
+  pickup_at?: string
+  source?: string
+  notes?: string
+  driver?: {
+    id: string
+    name: string
+    email: string
+  } | null
+  carrier?: {
+    id: string
+    name: string
+    email: string
+  } | null
+}
+
+export interface ShipmentsList {
+  shipments: Shipment[]
+  has_more: boolean
+}
+
+export interface Shipment {
+  id: string
+  business_id: string
+  order_id: string | null
+  current_status: string
+  statuses: StatusRecord[]
+  created_at: string
+  updated_at: string
+  delivered_at?: string
+  pickup_at?: string
+  source?: string
+  notes?: string
+  driver?: {
+    id: string
+    name: string
+    email: string
+  } | null
+  carrier?: {
+    id: string
+    name: string
+    email: string
+  } | null
+}
+
+export interface StatusRecord {
+  status: string
+  timestamp: string
+  note?: string
+}
+
+export interface OrdersList {
+  orders: Order[]
+  has_more: boolean
 }
