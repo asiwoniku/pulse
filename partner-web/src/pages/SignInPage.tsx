@@ -20,6 +20,11 @@ export function SignInPage() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
+  // Google OAuth sign-in
+  const [isGoogleSigningIn, setIsGoogleSigningIn] = useState(false)
+
+  const valid = email.trim().length > 3 && password.length >= 6 && !busy && !isGoogleSigningIn
+
   const valid = email.trim().length > 3 && password.length >= 6 && !busy
 
   async function submit(e: FormEvent) {
@@ -87,6 +92,9 @@ export function SignInPage() {
             </Banner>
           ) : null}
           {notice ? <Banner tone="warning" title="Account created">{notice}</Banner> : null}
+          <div className="google-continue" onClick={() => signInWithGoogle()} disabled={isGoogleSigningIn}>
+            <span>Continue with Google</span>
+          </div>
 
           <form onSubmit={submit} className="form" noValidate>
             <div className="field">
