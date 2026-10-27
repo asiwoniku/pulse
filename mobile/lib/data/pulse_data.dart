@@ -1,5 +1,4 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:gotrue/gotrue.dart' show OAuthProvider;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart' as launcher;
 
@@ -40,10 +39,9 @@ enum PulseApp {
 
   /// Resolved at compile time from `--dart-define=PULSE_APP=pulser`, so the wrong
   /// build can never be mistaken for the right one.
-  static PulseApp get current => const String.fromEnvironment(
-        'PULSE_APP',
-        defaultValue: 'partner',
-      ) == 'pulser'
+  static PulseApp get current =>
+      const String.fromEnvironment('PULSE_APP', defaultValue: 'partner') ==
+          'pulser'
       ? PulseApp.pulser
       : PulseApp.partner;
 
@@ -113,7 +111,11 @@ class PulseData {
     final storage = const FlutterSecureStorage(
       aOptions: AndroidOptions(encryptedSharedPreferences: true),
     );
-    final data = PulseData._(Supabase.instance.client, storage, PulseApp.current);
+    final data = PulseData._(
+      Supabase.instance.client,
+      storage,
+      PulseApp.current,
+    );
 
     final token = await storage.read(key: _tokenKey);
     if (token != null && token.isNotEmpty) {
@@ -137,7 +139,7 @@ class PulseData {
     await _storage.write(key: _refreshKey, value: session.refreshToken ?? '');
   }
 
-/// Sign in with an email address or a staff ID.
+  /// Sign in with an email address or a staff ID.
   ///
   /// Supabase authenticates on email, so a staff login resolves the account's
   /// reserved address first, through a `SECURITY DEFINER` function the database
@@ -157,7 +159,8 @@ class PulseData {
       final account = demoAccountFor(id);
       if (account == null || account.password != password) {
         throw const PulseApiError(
-            'That demo sign-in does not match. Use one of the accounts listed below.');
+          'That demo sign-in does not match. Use one of the accounts listed below.',
+        );
       }
       await _storage.write(key: _businessKey, value: 'demo-business');
       return '';
@@ -211,10 +214,10 @@ class PulseData {
   }
 
   Future<String> _staffEmail(String staffId) async {
-    final result =
-        await _client.rpc('staff_login_email', params: <String, dynamic>{
-      'p_staff_id': staffId,
-    });
+    final result = await _client.rpc(
+      'staff_login_email',
+      params: <String, dynamic>{'p_staff_id': staffId},
+    );
     final value = result is List && result.isNotEmpty ? result.first : result;
     if (value == null) {
       // Deliberately identical to a wrong password. Anything else turns this into
@@ -250,9 +253,6 @@ class PulseData {
         ),
       );
       final url = response.url;
-      if (url == null) {
-        throw const PulseApiError('Google sign-in could not be started.');
-      }
 
       final launched = await launcher.launchUrl(
         Uri.parse(url),
@@ -260,7 +260,8 @@ class PulseData {
       );
       if (!launched) {
         throw const PulseApiError(
-            'No browser is available to complete Google sign-in.');
+          'No browser is available to complete Google sign-in.',
+        );
       }
 
       // Wait for the round trip to deliver a session. If Google is not enabled in
@@ -275,16 +276,21 @@ class PulseData {
         }
       }
       throw const PulseApiError(
-          'Google sign-in did not complete. Check that Google is enabled under '
-          'Authentication → Providers in the Supabase project, that '
-          'GOOGLE_CLIENT_ID was passed to this build, and that '
-          'com.supabase.pulse://login-callback is in its Redirect URLs.');
+        'Google sign-in did not complete. Check that Google is enabled under '
+        'Authentication → Providers in the Supabase project, that '
+        'GOOGLE_CLIENT_ID was passed to this build, and that '
+        'com.supabase.pulse://login-callback is in its Redirect URLs.',
+      );
     } on AuthException catch (e) {
       throw PulseApiError(e.message, code: e.code);
     }
   }
 
-  Future<String> signUp(String email, String password, {String? fullName}) async {
+  Future<String> signUp(
+    String email,
+    String password, {
+    String? fullName,
+  }) async {
     try {
       final response = await _client.auth.signUp(
         email: email.trim(),
@@ -329,7 +335,8 @@ class PulseData {
       final rows = await _client
           .from('businesses')
           .select(
-              'id,name,kind,city,country_code,currency,phone_e164,logo_url,service_areas,is_active')
+            'id,name,kind,city,country_code,currency,phone_e164,logo_url,service_areas,is_active',
+          )
           .order('name');
       return (rows as List<dynamic>)
           .map((r) => Workspace.fromJson(Map<String, dynamic>.from(r as Map)))
@@ -350,18 +357,21 @@ class PulseData {
     String? phoneE164,
   }) async {
     try {
-      await _client.rpc('create_business', params: <String, dynamic>{
-        'p_name': name.trim(),
-        if (city != null && city.trim().isNotEmpty) 'p_city': city.trim(),
-        if (countryCode != null && countryCode.trim().isNotEmpty)
-          'p_country_code': countryCode.trim().toUpperCase(),
-        if (currency != null && currency.trim().isNotEmpty)
-          'p_currency': currency.trim().toUpperCase(),
-        'p_kind': kind,
-        // 0017 requires a phone number for vendors; the database enforces it.
-        if (phoneE164 != null && phoneE164.trim().isNotEmpty)
-          'p_phone_e164': phoneE164.trim(),
-      });
+      await _client.rpc(
+        'create_business',
+        params: <String, dynamic>{
+          'p_name': name.trim(),
+          if (city != null && city.trim().isNotEmpty) 'p_city': city.trim(),
+          if (countryCode != null && countryCode.trim().isNotEmpty)
+            'p_country_code': countryCode.trim().toUpperCase(),
+          if (currency != null && currency.trim().isNotEmpty)
+            'p_currency': currency.trim().toUpperCase(),
+          'p_kind': kind,
+          // 0017 requires a phone number for vendors; the database enforces it.
+          if (phoneE164 != null && phoneE164.trim().isNotEmpty)
+            'p_phone_e164': phoneE164.trim(),
+        },
+      );
     } on PostgrestException catch (e) {
       throw PulseApiError.fromPostgrest(e);
     }
@@ -370,25 +380,31 @@ class PulseData {
   /// Redeems an invitation code. Only the account it was issued to can use it.
   Future<void> acceptInvitation(String code) async {
     try {
-      await _client.rpc('accept_invitation',
-          params: <String, dynamic>{'p_code': code.trim()});
+      await _client.rpc(
+        'accept_invitation',
+        params: <String, dynamic>{'p_code': code.trim()},
+      );
       await _storage.delete(key: _businessKey);
     } on PostgrestException catch (e) {
       throw PulseApiError.fromPostgrest(e);
     }
   }
 
-/* ---------------- partner reads ---------------- */
+  /* ---------------- partner reads ---------------- */
 
-  Future<List<Shipment>> shipments(String businessId,
-      {int offset = 0, int limit = 25}) async {
+  Future<List<Shipment>> shipments(
+    String businessId, {
+    int offset = 0,
+    int limit = 25,
+  }) async {
     if (isDemoMode) return demoShipments();
     try {
       final rows = await _client
           .from('shipments')
           .select(
-              'id,pulse_shipment_id,business_id,current_status,order_id,created_at,'
-              'last_event_received_at,last_verified_event_at,last_verified_location')
+            'id,pulse_shipment_id,business_id,current_status,order_id,created_at,'
+            'last_event_received_at,last_verified_event_at,last_verified_location',
+          )
           .eq('business_id', businessId)
           .order('created_at', ascending: false)
           .range(offset, offset + limit - 1);
@@ -406,28 +422,35 @@ class PulseData {
       final rows = await _client
           .from('shipment_events')
           .select(
-              'event_id,event_type,source_type,source_reference,occurred_at,received_at,'
-              'location,verification_status,order_status_from,order_status_to')
+            'event_id,event_type,source_type,source_reference,occurred_at,received_at,'
+            'location,verification_status,order_status_from,order_status_to',
+          )
           .eq('shipment_id', shipmentId)
           .order('occurred_at', ascending: false)
           .limit(500);
       return (rows as List<dynamic>)
-          .map((r) => ShipmentEvent.fromJson(Map<String, dynamic>.from(r as Map)))
+          .map(
+            (r) => ShipmentEvent.fromJson(Map<String, dynamic>.from(r as Map)),
+          )
           .toList();
     } on PostgrestException catch (e) {
       throw PulseApiError.fromPostgrest(e);
     }
   }
 
-  Future<List<OrderRow>> orders(String businessId,
-      {int offset = 0, int limit = 25}) async {
+  Future<List<OrderRow>> orders(
+    String businessId, {
+    int offset = 0,
+    int limit = 25,
+  }) async {
     if (isDemoMode) return demoOrders();
     try {
       final rows = await _client
           .from('orders')
           .select(
-              'id,reference,status,service_type,pickup_text,destination_text,'
-              'price_amount,currency,payment_status,promised_at,created_at,requires_otp')
+            'id,reference,status,service_type,pickup_text,destination_text,'
+            'price_amount,currency,payment_status,promised_at,created_at,requires_otp',
+          )
           .eq('business_id', businessId)
           .order('created_at', ascending: false)
           .range(offset, offset + limit - 1);
@@ -445,7 +468,8 @@ class PulseData {
       final rows = await _client
           .from('drivers')
           .select(
-              'id,business_id,status,staff_id,full_name,phone_e164,account_active')
+            'id,business_id,status,staff_id,full_name,phone_e164,account_active',
+          )
           .eq('business_id', businessId)
           .order('created_at', ascending: false);
       return (rows as List<dynamic>)
@@ -456,7 +480,7 @@ class PulseData {
     }
   }
 
-/* ---------------- driver surface (Pulser) ---------------- */
+  /* ---------------- driver surface (Pulser) ---------------- */
   /* These six are the entire driver-facing API. `guard_order_columns` (0013)
    * makes it structurally impossible for a driver to touch price or payment
    * state, so there is deliberately no driver method for either. */
@@ -473,7 +497,8 @@ class PulseData {
           .limit(1);
       if (rows.isEmpty) return null;
       return DriverProfile.fromJson(
-          Map<String, dynamic>.from(rows.first as Map));
+        Map<String, dynamic>.from(rows.first as Map),
+      );
     } on PostgrestException catch (e) {
       throw PulseApiError.fromPostgrest(e);
     }
@@ -487,9 +512,10 @@ class PulseData {
       final rows = await _client
           .from('driver_assignments')
           .select(
-              'id,order_id,status,scheduled_start,notes,'
-              'order:orders!inner(id,reference,pickup_text,destination_text,requires_otp),'
-              'shipments!inner(pulse_shipment_id)')
+            'id,order_id,status,scheduled_start,notes,'
+            'order:orders!inner(id,reference,pickup_text,destination_text,requires_otp),'
+            'shipments!inner(pulse_shipment_id)',
+          )
           .eq('driver_id', driverId)
           .order('scheduled_start', ascending: true, nullsFirst: false);
       return (rows as List<dynamic>)
@@ -500,15 +526,21 @@ class PulseData {
     }
   }
 
-  Future<void> respondToAssignment(String assignmentId, bool accept,
-          {String? reason}) async {
+  Future<void> respondToAssignment(
+    String assignmentId,
+    bool accept, {
+    String? reason,
+  }) async {
     await _guardDemo('Accepting a job needs a live account.');
     try {
-      await _client.rpc('respond_to_assignment', params: <String, dynamic>{
-        'p_assignment_id': assignmentId,
-        'p_accept': accept,
-        'p_reason': reason,
-      });
+      await _client.rpc(
+        'respond_to_assignment',
+        params: <String, dynamic>{
+          'p_assignment_id': assignmentId,
+          'p_accept': accept,
+          'p_reason': reason,
+        },
+      );
     } on PostgrestException catch (e) {
       throw PulseApiError.fromPostgrest(e);
     }
@@ -516,15 +548,21 @@ class PulseData {
 
   /// Records a delivery attempt. A *failed* attempt is normal and expected: it
   /// creates a real exception case rather than destroying the primary status.
-  Future<void> recordDeliveryAttempt(String orderId, String event,
-      {String? note}) async {
+  Future<void> recordDeliveryAttempt(
+    String orderId,
+    String event, {
+    String? note,
+  }) async {
     await _guardDemo('Recording an attempt needs a live account.');
     try {
-      await _client.rpc('record_delivery_attempt', params: <String, dynamic>{
-        'p_order_id': orderId,
-        'p_event': event,
-        'p_note': note,
-      });
+      await _client.rpc(
+        'record_delivery_attempt',
+        params: <String, dynamic>{
+          'p_order_id': orderId,
+          'p_event': event,
+          'p_note': note,
+        },
+      );
     } on PostgrestException catch (e) {
       throw PulseApiError.fromPostgrest(e);
     }
@@ -542,13 +580,16 @@ class PulseData {
   }) async {
     await _guardDemo('Proof of delivery needs a live account.');
     try {
-      await _client.rpc('capture_proof_of_delivery', params: <String, dynamic>{
-        'p_order_id': orderId,
-        'p_recipient_name': recipientName,
-        'p_photo_url': photoUrl,
-        'p_signature_url': signatureUrl,
-        'p_otp': otp,
-      });
+      await _client.rpc(
+        'capture_proof_of_delivery',
+        params: <String, dynamic>{
+          'p_order_id': orderId,
+          'p_recipient_name': recipientName,
+          'p_photo_url': photoUrl,
+          'p_signature_url': signatureUrl,
+          'p_otp': otp,
+        },
+      );
     } on PostgrestException catch (e) {
       throw PulseApiError.fromPostgrest(e);
     }
@@ -559,10 +600,13 @@ class PulseData {
   Future<void> setDriverAvailability(String driverId, bool available) async {
     await _guardDemo('Availability needs a live account.');
     try {
-      await _client.rpc('set_driver_availability', params: <String, dynamic>{
-        'p_driver_id': driverId,
-        'p_available': available,
-      });
+      await _client.rpc(
+        'set_driver_availability',
+        params: <String, dynamic>{
+          'p_driver_id': driverId,
+          'p_available': available,
+        },
+      );
     } on PostgrestException catch (e) {
       throw PulseApiError.fromPostgrest(e);
     }

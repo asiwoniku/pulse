@@ -236,8 +236,6 @@ export function demoFetch(path: string): unknown | null {
 /* Authentication                                                      */
 /* ------------------------------------------------------------------ */
 
-\n  user_id: string\n  email: string
-
 export interface SignUpResult {
   access_token: string | null
   user_id: string | null
@@ -333,17 +331,8 @@ export const workspace = {
   patchBusiness: (
     businessId: string,
     input: Partial<
-      Pick<
-        Business,
-        | 'name'
-        | 'phone_e164'
-        | 'email'
-        | 'city'
-        | 'country_code'
-        | 'currency'
-        | 'is_active'
-      >
-    > & { service_areas?: string[] },
+      Pick<Business, 'name' | 'phone_e164' | 'email' | 'city' | 'country_code' | 'currency' | 'is_active'>
+        > & { service_areas?: string[] },
   ) =>
     patch<Record<string, unknown>>(
       `/api/businesses/${encodeURIComponent(businessId)}`,
@@ -437,6 +426,14 @@ export interface StatusRecord {
 export interface OrdersList {
   orders: Order[]
   has_more: boolean
+}
+
+export interface Session {
+  access_token: string
+  refresh_token: string | null
+  expires_in: number | null
+  user_id: string
+  email: string
 }
 
 /* ------------------------------------------------------------------ */
