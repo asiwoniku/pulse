@@ -1,13 +1,19 @@
 {
-  "name": "pulse-partner-web",
+  "name": "pulse-partner-desktop",
+  "productName": "Pulse Partner",
+  "version": "1.0.0",
+  "description": "Pulse Partner operations workspace for logistics companies",
   "private": true,
-  "version": "0.1.0",
   "type": "module",
+  "main": "electron/main.js",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "electron:dev": "electron electron/main.js",
+    "electron:package": "npm run build && electron-builder",
+    "dist": "npm run build && electron-builder --dir"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -18,7 +24,30 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.0",
     "typescript": "^5.6.3",
     "vite": "^5.4.11"
+  },
+  "build": {
+    "appId": "com.pulse.partner",
+    "productName": "Pulse Partner",
+    "copyright": "Copyright (c) 2026 Pulse",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "public/brand/pulse.svg"
+    },
+    "nsis": {
+      "createDesktopShortcut": true,
+      "allowElevation": false,
+      "oneClick": false
+    }
   }
 }
