@@ -111,7 +111,7 @@ export function MovingPage() {
       <Panel title="Moving requests" description="Up to 100 most recent requests visible to your workspace.">
         <PageLoad initial={query.initial} error={query.error} retry={query.reload} empty={!rows.length}>
           <div className="table-wrap"><table className="table"><thead><tr><th>Route</th><th>Status</th><th>Preferred date</th><th>Quote</th><th>Survey / items</th></tr></thead><tbody>
-            {rows.map((row: MovingRequest) => <tr key={row.id}><td><strong>{row.origin_text}</strong><br /><span className="muted">to {row.destination_text}</span></td><td><StatusBadge status={row.status} /></td><td>{row.preferred_date ?? 'Not set'}</td><td><Money amount={row.quote_amount} currency={row.currency} /></td><td>{row.requires_survey === 'unset' ? 'Survey not recorded' : `Survey: ${row.requires_survey}`}{row.items.length ? ` · ${row.items.length} item(s)` : ''}</td></tr>)}
+            {rows.map((row: any) => <tr key={row.id}><td><strong>{row.origin_text}</strong><br /><span className="muted">to {row.destination_text}</span></td><td><StatusBadge status={row.status} /></td><td>{row.preferred_date ?? 'Not set'}</td><td><Money amount={row.quote_amount} currency={row.currency} /></td><td>{String(row.requires_survey) === 'unset' ? 'Survey not recorded' : `Survey: ${row.requires_survey}`}{row.items?.length ? ` · ${row.items.length} item(s)` : ''}</td></tr>)}
           </tbody></table></div>
         </PageLoad>
       </Panel>
@@ -195,7 +195,7 @@ export function PaymentsPage() {
   // `{}`, and `map[status] + 1` then fails because `{}` has no `+`.
   const totals = useMemo(
     () =>
-      rows.reduce<Record<string, number>>((sum, row) => {
+      (rows as any[]).reduce<Record<string, number>>((sum, row: any) => {
         if (row.status === 'paid') {
           const currency = String(row.currency ?? '')
           sum[currency] = (sum[currency] ?? 0) + Number(row.amount ?? 0)
@@ -207,7 +207,7 @@ export function PaymentsPage() {
   return (
     <>
       <PageHeader eyebrow={activeBusiness?.name ?? 'Workspace'} title="Payments" description="Payment attempts actually recorded for orders. No provider connection or payout ledger is configured." />
-      <div className="metrics">{Object.entries(totals).length ? Object.entries(totals).map(([currency, value]) => <div className="metric" key={currency}><span className="metric__label">Recorded paid · {currency}</span><strong className="metric__value">{value.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong><span className="metric__hint">In the latest 100 attempts</span></div>) : <div className="metric"><span className="metric__label">Recorded paid attempts</span><strong className="metric__value">0</strong><span className="metric__hint">No confirmed attempts in this window</span></div>}</div>
+      <div className="metrics">{Object.entries(totals).length ? Object.entries(totals).map(([currency, value]) => <div className="metric" key={currency}><span className="metric__label">Recorded paid · {currency}</span><strong className="metric__value">{(value as any).toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong><span className="metric__hint">In the latest 100 attempts</span></div>) : <div className="metric"><span className="metric__label">Recorded paid attempts</span><strong className="metric__value">0</strong><span className="metric__hint">No confirmed attempts in this window</span></div>}</div>
       <Panel title="Payment attempts" description="Pending attempts are not counted as revenue; provider payloads are not exposed.">
         <PageLoad initial={query.initial} error={query.error} retry={query.reload} empty={!rows.length}>
           <div className="table-wrap"><table className="table"><thead><tr><th>Order</th><th>Provider</th><th>Amount</th><th>Status</th><th>Created</th><th>Confirmed</th></tr></thead><tbody>
@@ -251,7 +251,7 @@ export function ReportsPage() {
   const rows = data?.orders ?? []
   const statuses = useMemo(
     () =>
-      rows.reduce<Record<string, number>>((map, row) => {
+      (rows as any[]).reduce<Record<string, number>>((map, row: any) => {
         const status = String(row.status ?? 'unknown')
         map[status] = (map[status] ?? 0) + 1
         return map
