@@ -5,6 +5,7 @@ import { useSession } from '../state/session'
 import { Banner, EmptyState, ErrorState, PageHeader, Panel, Skeleton } from '../components/ui'
 import { DateTimeValue, Metric, RelativeTime, ShipmentRef, StatusBadge } from '../components/domain'
 import { IconPlus } from '../components/icons'
+import { ActiveShipmentMap } from '../components/ActiveShipmentMap'
 
 /**
  * Overview.
@@ -125,7 +126,13 @@ export function OverviewPage() {
           are not the whole workload. Open All shipments for the full list.
         </Banner>
       ) : null}
-<div className="grid grid--2">
+      <Panel title="Active shipment routes & network map" description="Live geospatial visualization of active shipments and delivery nodes.">
+        <div className="panel__body" style={{ padding: 0 }}>
+          <ActiveShipmentMap shipments={rows} height="360px" />
+        </div>
+      </Panel>
+
+      <div className="grid grid--2">
         <Panel
           title="Urgent exceptions"
           description="Shipments the database currently reports as blocked."
