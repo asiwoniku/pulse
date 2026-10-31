@@ -7,6 +7,7 @@ import { Banner } from './components/ui'
 import { SignInPage } from './pages/SignInPage'
 import { saveSession } from './lib/api'
 import { OverviewPage } from './pages/OverviewPage'
+import { AdminPage } from './pages/AdminPage'
 import { ShipmentsPage } from './pages/ShipmentsPage'
 import { ShipmentDetailPage } from './pages/ShipmentDetailPage'
 import { CreateShipmentPage } from './pages/CreateShipmentPage'
@@ -163,6 +164,7 @@ function AppLayout() {
         <main className="content" id="main-content" key={location.pathname}>
           <Routes>
             <Route path="/app/overview" element={<OverviewPage />} />
+            <Route path="/app/admin" element={<AdminPage />} />
             <Route path="/app/shipments" element={<ShipmentsPage />} />
             <Route path="/app/shipments/new" element={<CreateShipmentPage />} />
             <Route path="/app/shipments/:shipmentId" element={<ShipmentDetailPage />} />

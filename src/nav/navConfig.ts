@@ -23,7 +23,10 @@ export interface NavGroup {
 export const NAV: NavGroup[] = [
   {
     label: 'Workspace',
-    items: [{ to: '/app/overview', label: 'Overview' }],
+    items: [
+      { to: '/app/overview', label: 'Overview' },
+      { to: '/app/admin', label: 'General Admin' },
+    ],
   },
   {
     label: 'Shipments',

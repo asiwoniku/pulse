@@ -135,3 +135,13 @@ export function Banner({
     </div>
   )
 }
+
+export function Badge({
+  tone = 'neutral',
+  children,
+}: {
+  tone?: 'neutral' | 'success' | 'warning' | 'critical' | 'info'
+  children: ReactNode
+}) {
+  return <span className={`badge badge--${tone}`}>{children}</span>
+}

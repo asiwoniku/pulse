@@ -64,6 +64,7 @@ export function DemoToggle() {
 
 const ICONS: Record<string, (p: IconProps) => JSX.Element> = {
   '/app/overview': IconGrid,
+  '/app/admin': IconShield,
   '/app/shipments': IconBox,
   '/app/shipments/new': IconBox,
   '/app/exceptions': IconAlert,
