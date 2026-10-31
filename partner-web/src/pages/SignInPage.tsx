@@ -25,8 +25,6 @@ export function SignInPage() {
 
   const valid = email.trim().length > 3 && password.length >= 6 && !busy && !isGoogleSigningIn
 
-  const valid = email.trim().length > 3 && password.length >= 6 && !busy
-
   async function submit(e: FormEvent) {
     e.preventDefault()
     if (!valid) return
@@ -92,7 +90,7 @@ export function SignInPage() {
             </Banner>
           ) : null}
           {notice ? <Banner tone="warning" title="Account created">{notice}</Banner> : null}
-          <div className="google-continue" onClick={() => signInWithGoogle()} disabled={isGoogleSigningIn}>
+          <div className="google-continue" onClick={() => signInWithGoogle()}>
             <span>Continue with Google</span>
           </div>
 

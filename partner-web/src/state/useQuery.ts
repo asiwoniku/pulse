@@ -20,7 +20,7 @@ export interface QueryState<T> {
   reload: () => void
 }
 
-export function useQuery<T>(
+export function useQuery<T = any>(
   /** Null disables the request, e.g. before a workspace is chosen. */
   fetcher: (() => Promise<T>) | null,
   deps: unknown[] = [],

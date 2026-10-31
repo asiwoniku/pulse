@@ -135,8 +135,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           access_token: result.access_token as string,
           refresh_token: null,
           expires_in: null,
-          user_id: result.user_id,
-          email: result.email,
+          user_id: result.user_id ?? '',
+          email: result.email ?? '',
         }
         saveSession(next)
         setSession(next)

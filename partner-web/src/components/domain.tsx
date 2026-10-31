@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { ShipmentStatus } from '../lib/api'
+import type { ShipmentStatusValue as ShipmentStatus } from '../lib/api'
 
 /**
  * Domain components: shipment status, verification level, money, dates.

@@ -42,7 +42,8 @@ export function WarehousePage() {
   const { activeBusiness } = useSession()
   const id = activeBusiness?.id ?? null
   const query = useQuery(id ? () => shipments.list(id, 0, 100) : null, [id])
-  const rows = (query.data?.shipments ?? []).filter((s) =>
+  const data = query.data as any
+  const rows = (data?.shipments ?? []).filter((s: any) =>
     ['accepted', 'assigned', 'driver_accepted', 'driver_arrived', 'at_pickup', 'picked_up'].includes(s.current_status),
   )
   return (
@@ -91,7 +92,8 @@ export function MovingPage() {
       query.reload()
     }
   }
-  const rows = query.data?.moving_requests ?? []
+  const data = query.data as any
+  const rows = data?.moving_requests ?? []
   return (
     <>
       <PageHeader eyebrow={activeBusiness?.name ?? 'Workspace'} title="Moving jobs" description="Create a moving request and review its real survey, route, and captured-item records." />
@@ -109,7 +111,7 @@ export function MovingPage() {
       <Panel title="Moving requests" description="Up to 100 most recent requests visible to your workspace.">
         <PageLoad initial={query.initial} error={query.error} retry={query.reload} empty={!rows.length}>
           <div className="table-wrap"><table className="table"><thead><tr><th>Route</th><th>Status</th><th>Preferred date</th><th>Quote</th><th>Survey / items</th></tr></thead><tbody>
-            {rows.map((row: MovingRequest) => <tr key={row.id}><td><strong>{row.origin_text}</strong><br /><span className="muted">to {row.destination_text}</span></td><td><StatusBadge status={row.status} /></td><td>{row.preferred_date ?? 'Not set'}</td><td><Money amount={row.quote_amount} currency={row.currency} /></td><td>{row.requires_survey === 'unset' ? 'Survey not recorded' : `Survey: ${row.requires_survey}`}{row.items.length ? ` · ${row.items.length} item(s)` : ''}</td></tr>)}
+            {rows.map((row: any) => <tr key={row.id}><td><strong>{row.origin_text}</strong><br /><span className="muted">to {row.destination_text}</span></td><td><StatusBadge status={row.status} /></td><td>{row.preferred_date ?? 'Not set'}</td><td><Money amount={row.quote_amount} currency={row.currency} /></td><td>{String(row.requires_survey) === 'unset' ? 'Survey not recorded' : `Survey: ${row.requires_survey}`}{row.items?.length ? ` · ${row.items.length} item(s)` : ''}</td></tr>)}
           </tbody></table></div>
         </PageLoad>
       </Panel>
@@ -122,7 +124,8 @@ export function InternationalPage() {
   const { activeBusiness } = useSession()
   const id = activeBusiness?.id ?? null
   const query = useQuery(id ? () => shipments.list(id, 0, 100) : null, [id])
-  const rows = query.data?.shipments ?? []
+  const data = query.data as any
+  const rows = data?.shipments ?? []
   return (
     <>
       <PageHeader eyebrow={activeBusiness?.name ?? 'Workspace'} title="International & clearance" description="Review recorded shipment routes and service types. No customs declarations or clearance provider is connected." actions={<Link className="btn btn--secondary" to="/app/shipments">All shipments</Link>} />
@@ -141,7 +144,8 @@ export function DocumentsPage() {
   const { activeBusiness } = useSession()
   const id = activeBusiness?.id ?? null
   const query = useQuery(id ? () => workspaceRecords.documents(id) : null, [id])
-  const rows = query.data?.documents ?? []
+  const data = query.data as any
+  const rows = data?.documents ?? []
   return (
     <>
       <PageHeader eyebrow={activeBusiness?.name ?? 'Workspace'} title="Documents & proof of delivery" description="A verified index of proof-of-delivery events recorded against shipments." />
@@ -164,7 +168,8 @@ export function AuditPage() {
   const { activeBusiness } = useSession()
   const id = activeBusiness?.id ?? null
   const query = useQuery(id ? () => workspaceRecords.audit(id) : null, [id])
-  const rows = query.data?.audit_logs ?? []
+  const data = query.data as any
+  const rows = data?.audit_logs ?? []
   return (
     <>
       <PageHeader eyebrow={activeBusiness?.name ?? 'Workspace'} title="Audit history" description="Append-only actions recorded by the database for this workspace." />
@@ -184,12 +189,13 @@ export function PaymentsPage() {
   const { activeBusiness } = useSession()
   const id = activeBusiness?.id ?? null
   const query = useQuery(id ? () => workspaceRecords.payments(id) : null, [id])
-  const rows = query.data?.payment_attempts ?? []
+  const data = query.data as any
+  const rows = data?.payment_attempts ?? []
   // The accumulator is typed explicitly. Inferred from the `{}` seed it widens to
   // `{}`, and `map[status] + 1` then fails because `{}` has no `+`.
   const totals = useMemo(
     () =>
-      rows.reduce<Record<string, number>>((sum, row) => {
+      (rows as any[]).reduce<Record<string, number>>((sum, row: any) => {
         if (row.status === 'paid') {
           const currency = String(row.currency ?? '')
           sum[currency] = (sum[currency] ?? 0) + Number(row.amount ?? 0)
@@ -201,7 +207,7 @@ export function PaymentsPage() {
   return (
     <>
       <PageHeader eyebrow={activeBusiness?.name ?? 'Workspace'} title="Payments" description="Payment attempts actually recorded for orders. No provider connection or payout ledger is configured." />
-      <div className="metrics">{Object.entries(totals).length ? Object.entries(totals).map(([currency, value]) => <div className="metric" key={currency}><span className="metric__label">Recorded paid · {currency}</span><strong className="metric__value">{value.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong><span className="metric__hint">In the latest 100 attempts</span></div>) : <div className="metric"><span className="metric__label">Recorded paid attempts</span><strong className="metric__value">0</strong><span className="metric__hint">No confirmed attempts in this window</span></div>}</div>
+      <div className="metrics">{Object.entries(totals).length ? Object.entries(totals).map(([currency, value]) => <div className="metric" key={currency}><span className="metric__label">Recorded paid · {currency}</span><strong className="metric__value">{(value as any).toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong><span className="metric__hint">In the latest 100 attempts</span></div>) : <div className="metric"><span className="metric__label">Recorded paid attempts</span><strong className="metric__value">0</strong><span className="metric__hint">No confirmed attempts in this window</span></div>}</div>
       <Panel title="Payment attempts" description="Pending attempts are not counted as revenue; provider payloads are not exposed.">
         <PageLoad initial={query.initial} error={query.error} retry={query.reload} empty={!rows.length}>
           <div className="table-wrap"><table className="table"><thead><tr><th>Order</th><th>Provider</th><th>Amount</th><th>Status</th><th>Created</th><th>Confirmed</th></tr></thead><tbody>
@@ -218,7 +224,8 @@ export function ReputationPage() {
   const { activeBusiness } = useSession()
   const id = activeBusiness?.id ?? null
   const query = useQuery(id ? () => workspaceRecords.feedback(id) : null, [id])
-  const rows = query.data?.feedback ?? []
+  const data = query.data as any
+  const rows = data?.feedback ?? []
   const average = rows.length ? rows.reduce((total, row) => total + Number(row.rating), 0) / rows.length : null
   return (
     <>
@@ -240,10 +247,11 @@ export function ReportsPage() {
   const { activeBusiness } = useSession()
   const id = activeBusiness?.id ?? null
   const query = useQuery(id ? () => operations.board(id) : null, [id])
-  const rows = query.data?.orders ?? []
+  const data = query.data as any
+  const rows = data?.orders ?? []
   const statuses = useMemo(
     () =>
-      rows.reduce<Record<string, number>>((map, row) => {
+      (rows as any[]).reduce<Record<string, number>>((map, row: any) => {
         const status = String(row.status ?? 'unknown')
         map[status] = (map[status] ?? 0) + 1
         return map

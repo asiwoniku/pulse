@@ -4,6 +4,7 @@ import { useQuery } from '../state/useQuery'
 import { Banner, EmptyState, ErrorState, PageHeader, Panel, Skeleton } from '../components/ui'
 import { DateTimeValue, ShipmentRef, StatusBadge, VerificationBadge } from '../components/domain'
 import { RecordEventForm } from './RecordEventForm'
+import { ActiveShipmentMap } from '../components/ActiveShipmentMap'
 
 /**
  * Shipment detail and the Shipment Passport.
@@ -41,7 +42,7 @@ function eventLabel(type: string): string {
   return EVENT_LABEL[type] ?? type.replace(/_/g, ' ').toLowerCase()
 }
 
-function EventRow({ event }: { event: ShipmentEvent }) {
+function EventRow({ event }: { event: any }) {
   const meta = event.metadata as Record<string, unknown>
   const note = typeof meta.note === 'string' ? meta.note : null
   return (
@@ -118,7 +119,7 @@ export function ShipmentDetailPage() {
     )
   }
 
-  const shipment = query.data
+  const shipment = query.data as any
   if (!shipment) {
     return (
       <>
@@ -187,6 +188,12 @@ export function ShipmentDetailPage() {
           ) : null}
         </dl>
       </div>
+
+      <Panel title="Active route & verified location" description="Interactive map showing origin, delivery checkpoints, and last verified location.">
+        <div className="panel__body" style={{ padding: 0 }}>
+          <ActiveShipmentMap shipments={[shipment]} height="280px" />
+        </div>
+      </Panel>
 
       <div className="tabs" role="tablist" aria-label="Shipment sections">
         <button
