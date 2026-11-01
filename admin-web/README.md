@@ -1,72 +1,65 @@
-# Pulse Master Operations Admin Console (`admin-web`)
+# Pulse Platform Admin
 
-Standalone web portal for Pulse Platform SuperAdministrators, Arbitrators, and Operations Directors.
-Configured for independent Vercel deployment on the subdomain **`admin.pulse.com`**.
+`admin-web/` is the standalone Pulse-owned platform control plane. It is not a
+partner portal and has no route or API for shipments, orders, drivers, customers,
+dispatch, or partner evidence.
 
----
+## Platform capabilities
 
-## 🚀 Key Functional Areas
+- View an aggregate count of organisation accounts and verification states.
+- Review organisation profile data, verification method/source/limitations, and
+  account standing.
+- Suspend or reactivate a platform account. Suspended organisations cannot make
+  operational changes through the database `can_operate` gate.
+- Read the append-only audit history of platform review actions.
 
-1. **Partner Workspace & Credentials Issuance**
-   - Direct onboarding and instant credential issuance for new freight, cold-chain, moving, and courier partners.
-   - One-click copyable Credentials Slip (Temporary password, Portal URL, Workspace ID, Onboarding checklist).
-   - Real-time status toggles (`Active`, `Pending KYC`, `Suspended`), fleet count adjustments, and custom commission rate schedules.
-   - Secure temporary credential vault with reveal/hide controls.
+The console does not expose partner work. Its Supabase RPCs check the trusted
+`app_metadata.platform_admin` claim, return only platform-level organisation
+metadata, and write to a separate platform audit table. Platform-admin claims
+must be assigned by a trusted server-side operator; never from a browser or
+user-editable metadata. A platform-admin claim does not grant partner workspace
+membership or bypass partner row-level security.
 
-2. **Escalated Dispute Arbitration & Escrow Lockers**
-   - Full evidentiary hearings for cargo damage, temperature excursions, and abandonment.
-   - Comprehensive evidence lockers (Bills of Lading, thermal sensor telematics, timestamped damage photography, certified statements).
-   - Multi-party balance statements (Claimant vs Carrier).
-   - Legally binding arbitration ruling decisions:
-     - Full settlement in favor of Claimant (automatic escrow disbursement).
-     - Full exoneration in favor of Carrier (releasing reserved funds).
-     - Split settlement percentage determinations with custom penalty allocations.
+Verification decisions are manual records, not external certification. Marking an
+organisation verified requires the reviewer to record the method, source, and
+limitations. Evidence storage and business application submission remain future
+work; this page does not claim that verification data exists when it does not.
 
-3. **Global Escrow & Liquidity Ledger**
-   - Platform-wide collateral health metrics ($184,500+ locked collateral).
-   - Automated settlement batch runs and bank wire clearance reconciliations.
-   - Disputed sum hold tracking.
+## Configure and run
 
-4. **Network Audit & SLA Telemetry**
-   - System-wide carrier compliance events, GPS heartbeat audits, and incident severity logs.
-   - Real-time uptime telemetry.
+Copy `.env.example` to `.env.local` and set the public Supabase URL and
+publishable/anon key:
 
----
+```env
+VITE_SUPABASE_URL=https://<project-ref>.supabase.co
+VITE_SUPABASE_ANON_KEY=<publishable-key>
+```
 
-## 🛠️ Deploying to Vercel (`admin.pulse.com`)
+Never put a service-role key in the browser app.
 
-To deploy this project to Vercel on `admin.pulse.com`:
-
-1. **Import the repository in Vercel:**
-   - Go to your Vercel Dashboard -> **Add New Project**.
-   - Select your GitHub repository (`asiwoniku/pulse`).
-
-2. **Configure Project Settings:**
-   - **Framework Preset**: `Vite`
-   - **Root Directory**: `admin-web` *(Click Edit and enter `admin-web`)*
-   - **Build Command**: `tsc -b && vite build` (or `bun run build`)
-   - **Output Directory**: `dist`
-   - **Install Command**: `bun install` or `npm install`
-
-3. **Add Custom Domain**:
-   - In Vercel Project Settings -> **Domains**.
-   - Add: `admin.pulse.com`.
-   - Add the CNAME record in your DNS provider:
-     - Name: `admin`
-     - Type: `CNAME`
-     - Value: `cname.vercel-dns.com`
-
-4. **Environment Variables (Optional)**:
-   - `VITE_SUPABASE_URL`: Your Supabase backend URL.
-   - `VITE_SUPABASE_ANON_KEY`: Your Supabase public anonymous key.
-
----
-
-## 💻 Local Development
-
-From this directory (`admin-web`):
-```bash
+```powershell
+cd admin-web
 npm install
 npm run dev
+npm run build
 ```
-The console will start at `http://localhost:5174`.
+
+The app signs in through Supabase Auth and immediately checks the protected
+`platform_admin_overview` RPC. A normal partner login is rejected. Apply database
+migrations through `0026` before using the platform review functions.
+
+## Provision an administrator
+
+Create the Auth user through the trusted account-provisioning process, then set
+`app_metadata.platform_admin` with the Supabase Auth Admin API from a private
+server environment:
+
+```ts
+await supabase.auth.admin.updateUserById(userId, {
+  app_metadata: { platform_admin: true },
+})
+```
+
+The Admin API/service-role credential must never be shipped to this frontend.
+Remove the claim server-side to revoke platform access; the user's next refreshed
+JWT will no longer pass the protected RPC check.

@@ -1,12 +1,14 @@
 # Pulse
 
 Delivery and moving control plane for small logistics businesses: a Postgres
-control plane (Supabase), a partner web portal, and a Flutter mobile client.
+control plane (Supabase), separate partner and Pulse-admin web apps, and a Flutter
+mobile client.
 
 ```
-supabase/migrations/   schema, marketplace, shipments, events, RBAC, RLS (0001–0024)
+supabase/migrations/   schema, marketplace, shipments, events, RBAC, RLS (0001–0026)
 supabase/README.md     apply order, invariants, verification queries, no-seed policy
 partner-web/           React + TypeScript partner operations workspace (Vite)
+admin-web/             isolated Pulse platform administration app (Vite)
 services/              stdlib-only Python API + dispatcher portal
 mobile/                Flutter Android app (offline, interactive product preview)
 android/               earlier Kotlin + Compose prototype
@@ -24,6 +26,7 @@ docs/                  architecture, RPC contract, ADRs
    decisions that depart from the original specification, and their costs.
 5. `docs/deployment.md` — the one-origin image, and what you must supply to deploy it.
 6. `mobile/README.md` — how to open and run the Flutter preview.
+7. `admin-web/README.md` — platform admin boundary and setup.
 
 ## Two rules the codebase is built around
 
@@ -45,8 +48,9 @@ the system.
 
 | Area | State |
 |---|---|
-| Schema, state machine, marketplace, shipment events, RBAC, RLS, storage, realtime | written as migrations `0001`–`0024`; `0022`–`0024` applied and verified against the live project |
+| Schema, state machine, marketplace, shipment events, RBAC, RLS, storage, realtime | written as migrations `0001`–`0026`; `0022`–`0024` are verified against the live project, later migrations still need deployment |
 | Partner web (React + TypeScript) | multi-page operations workspace in `partner-web/`; Overview, Shipments, Shipment Passport, Create, Dispatch, Drivers, Fleet, Customers, Exceptions, Integrations and Settings read live data |
+| Pulse platform admin (React + TypeScript) | separate `admin-web/`; profile-only organisation review, account status, and platform audit RPCs; no partner-work routes |
 | Service + dispatcher portal | Python service and portal run locally; Shipment Passports, manual event capture, and vendor carrier requests are implemented |
 | Flutter mobile app | offline sample workflows implemented in `mobile/`; live authentication and Supabase data access are not connected |
 | Kotlin Android prototype | retained under `android/` as an earlier implementation, not the active mobile app |
@@ -55,9 +59,9 @@ the system.
 
 The marketplace milestone currently adds provider discovery/offers (`0017`–`0021`)
 and a canonical shipment identity plus source-aware event history (`0022`). The
-partner portal now surfaces vendor carrier discovery/offers and the Shipment
-Passport timeline. Customer-side booking, provider verification, shipment
-documents/inspections, and trusted provider webhook processing remain future work.
+platform admin surface adds manual organization review controls (`0026`), while
+customer-side booking, verification evidence submission, shipment documents /
+inspections, and trusted provider webhook processing remain future work.
 
 ## Getting a working project
 

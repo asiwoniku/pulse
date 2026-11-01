@@ -1,8 +1,9 @@
 # Supabase schema
 
-Twenty-two migrations build the control plane: schema, the order state machine,
+Twenty-six migrations build the control plane: schema, the order state machine,
 marketplace offers, canonical shipment identities and event history, RBAC, and
-row level security. Nothing in here contains demo data.
+row level security. The platform admin surface is a separate, profile-only
+control plane. Nothing in here contains demo data.
 
 ## Applying
 
@@ -47,6 +48,8 @@ leaves an empty but fully functional database. That is the intended state.
 | 0022 | one-to-one Pulse shipment identity for each order, append-only source-aware event history, verification state, idempotent event RPC, participant RLS and realtime |
 | 0023 | re-creates the `on_auth_user_created` sign-up trigger and revokes execute on the internal functions from `PUBLIC` as well as `authenticated` |
 | 0024 | closes every application RPC to `PUBLIC`/`anon`, then re-grants the client-facing set to `authenticated` |
+| 0025 | partner-issued driver login identifiers and business branding |
+| 0026 | isolated platform organisation controls, manual verification records, admin audit RPCs, and no global admin bypass through partner RLS |
 
 ## The marketplace in one paragraph
 
@@ -111,6 +114,24 @@ callable from the apps until it is granted (or `0016` is re-run). `0024` then
 closes everything to `PUBLIC`, so a new RPC is unreachable by both `anon` and
 `authenticated` until it appears in `0024`'s client list — that is deliberate,
 because Postgres' default is the opposite (execute granted to `PUBLIC`).
+
+## Platform administrator boundary
+
+The standalone `admin-web/` app calls only four platform RPCs:
+`platform_admin_overview`, `platform_admin_organisations`,
+`platform_admin_review_business`, and `platform_admin_recent_actions`.
+Each verifies `app_metadata.platform_admin` in the authenticated JWT. Assign that
+claim only through a trusted server-side process; never from browser input or
+user-editable metadata.
+
+Platform claims do not grant partner business membership, order access, shipment
+access, driver/customer access, or operational write privileges. The membership
+helpers and order-state guard explicitly reject a platform-admin-only identity.
+The platform RPCs return business profile/verification metadata only, and the
+separate audit table stores platform review actions. Suspended organisations are
+blocked by `can_operate`; their existing records are not exposed to the admin app.
+Marking a business verified requires a recorded method, source, limitations,
+reviewer, and timestamp. This is a manual review record, not external certification.
 
 ## Two defects found against a live project
 

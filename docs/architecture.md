@@ -18,6 +18,10 @@ Flutter mobile (Android)       Partner web portal
                     |
           Postgres: schema · RLS · triggers · RPCs
               state machine · RBAC · history
+
+Platform Admin web (separate app)
+     | Auth + platform-only RPCs
+     +---------------------------> same Postgres control plane
 ```
 
 The earlier Kotlin/Compose app is retained under `android/` as a prototype.
@@ -28,6 +32,12 @@ connect to Supabase.
 There is intentionally nothing between the clients and Postgres (ADR-002). What
 the clients send is a request to do something; what decides whether it may happen
 is a trigger or a `SECURITY DEFINER` function.
+
+The Pulse-owned platform admin app is a separate application and authorization
+surface. Its RPCs only return organisation profile/review metadata and platform
+audit entries. `app_metadata.platform_admin` is checked by those RPCs, but does
+not bypass partner membership, participant RLS, or order-state authorization.
+The admin build has no partner routes, fixtures, or API proxy.
 
 ## Layers, and what each one is allowed to know
 

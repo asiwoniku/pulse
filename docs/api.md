@@ -127,6 +127,26 @@ Subscribed tables: `orders`, `driver_assignments`, `assignment_events`,
 `notifications`. Filter by `business_id` client-side for display; RLS already
 limits what the socket can deliver.
 
+## Platform administrator RPCs
+
+The standalone `admin-web/` application uses the Supabase Auth password and
+refresh-token endpoints, then calls these RPCs directly with the user's JWT and
+the public anon key:
+
+| RPC | Purpose | Authorization / returned data |
+|---|---|---|
+| `platform_admin_overview` | Counts of platform organisations by review/account status | Requires trusted `app_metadata.platform_admin`; aggregate counts only |
+| `platform_admin_organisations` | Organisation profile and verification metadata | Requires platform-admin claim; no orders, shipments, drivers, customers, or partner evidence |
+| `platform_admin_review_business` | Record verification review and activate/suspend a platform account | Requires platform-admin claim; writes reviewer/source/method/limitations and an immutable admin audit entry |
+| `platform_admin_recent_actions` | Latest platform administration events | Requires platform-admin claim; returns platform review actions only |
+
+Assign platform-admin claims only from a trusted server-side process. A
+platform-admin claim is deliberately not treated as partner membership and does
+not bypass partner RLS. A successful sign-in without the claim is rejected by
+the first protected RPC. A verification status of `verified` requires a
+non-empty method, source, limitations, reviewer, and timestamp; it records a
+manual decision and does not assert independent certification.
+
 ## Error rendering
 
 Supabase returns `{"code": "...", "message": "..."}`. The `message` is authored

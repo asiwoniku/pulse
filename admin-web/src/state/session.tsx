@@ -1,208 +1,68 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
-  ApiError,
-  auth,
-  clearSession,
-  demo,
-  isDemoMode,
-  loadSession,
-  oauthStart,
-  saveSession,
-  workspace,
-  type Business,
-  type Session,
-  type SignUpResult,
+  clearAdminSession,
+  restorePlatformAdminSession,
+  signInAsPlatformAdmin,
+  type AdminSession,
 } from '../lib/api'
 
-/**
- * Session and workspace context.
- *
- * Two things every authenticated page needs and that must never disagree:
- * who is signed in, and which company the user is acting inside. Tenant
- * isolation depends on the second being explicit — the selected business id is
- * passed to every query rather than inferred, so a page cannot accidentally read
- * across workspaces.
- */
-
-interface SessionState {
-  session: Session | null
-  businesses: Business[]
-  activeBusiness: Business | null
+interface AdminSessionContext {
+  session: AdminSession | null
   loading: boolean
-  /** Set when the session is gone; the shell shows a re-authenticate prompt. */
-  expired: boolean
+  error: string | null
   signIn: (email: string, password: string) => Promise<void>
-  signUp: (
-    email: string,
-    password: string,
-  ) => Promise<{ needsConfirmation: boolean; note?: string }>
-  signInWithGoogle: (customEmail?: string) => Promise<void>
   signOut: () => void
-  selectBusiness: (id: string) => void
-  refreshBusinesses: () => void
 }
 
-const Ctx = createContext<SessionState | null>(null)
-
-const BUSINESS_KEY = 'pulse.business'
+const Context = createContext<AdminSessionContext | null>(null)
 
 export function SessionProvider({ children }: { children: ReactNode }) {
-  // In demo mode there is no account and no token. A stand-in session is supplied
-  // so the shell renders and the reviewer can walk the product; it carries no
-  // credentials, so it cannot authenticate anything, and it is never persisted.
-  const demoSession: Session | null = isDemoMode()
-    ? { access_token: '', refresh_token: null, expires_in: null, user_id: 'demo-user', email: 'demo@example.invalid' }
-    : null
-
-  const [session, setSession] = useState<Session | null>(() => loadSession() ?? demoSession)
-  const [businesses, setBusinesses] = useState<Business[]>([])
-  const [activeId, setActiveId] = useState<string | null>(
-    () => window.localStorage.getItem(BUSINESS_KEY),
-  )
+  const [session, setSession] = useState<AdminSession | null>(null)
   const [loading, setLoading] = useState(true)
-  const [expired, setExpired] = useState(false)
-  const [businessRevision, setBusinessRevision] = useState(0)
+  const [error, setError] = useState<string | null>(null)
 
-  // Load the workspace whenever a session exists. Failures here are surfaced as
-  // an expired session or an empty workspace, never as invented companies.
   useEffect(() => {
-    let cancelled = false
-    if (!session) {
-      setBusinesses([])
-      setLoading(false)
-      return
-    }
-    // Demo mode never calls the service: the workspace list is the fixture, so no
-    // token is needed and no real account is consulted.
-    if (isDemoMode()) {
-      setBusinesses([demo.business as unknown as Business])
-      setLoading(false)
-      setExpired(false)
-      return
-    }
-    setLoading(true)
-    workspace
-      .list()
-      .then((data) => {
-        if (cancelled) return
-        const list = data.businesses ?? []
-        if (list.length > 0) {
-          setBusinesses(list)
-          setActiveId((current) => {
-            if (current && list.some((b) => b.id === current)) return current
-            return list[0]?.id ?? null
-          })
-        } else {
-          const fallback = demo.business as unknown as Business
-          setBusinesses([fallback])
-          setActiveId(fallback.id)
-        }
-        setExpired(false)
+    let active = true
+    restorePlatformAdminSession()
+      .then((restored) => {
+        if (active) setSession(restored)
       })
-      .catch((error: unknown) => {
-        if (cancelled) return
-        if (error instanceof ApiError && error.isAuthFailure) {
-          setExpired(true)
-          clearSession()
-          setSession(null)
-        } else {
-          const fallback = demo.business as unknown as Business
-          setBusinesses([fallback])
-          setActiveId(fallback.id)
-        }
+      .catch((cause: unknown) => {
+        clearAdminSession()
+        if (active && cause instanceof Error) setError(cause.message)
       })
       .finally(() => {
-        if (!cancelled) setLoading(false)
+        if (active) setLoading(false)
       })
     return () => {
-      cancelled = true
+      active = false
     }
-  }, [session, businessRevision])
+  }, [])
 
-  const value = useMemo<SessionState>(
+  const value = useMemo<AdminSessionContext>(
     () => ({
       session,
-      businesses,
-      activeBusiness: businesses.find((b) => b.id === activeId) ?? null,
       loading,
-      expired,
+      error,
       async signIn(email, password) {
-        const next = await auth.signIn(email, password)
-        saveSession(next)
-        setSession(next)
-        setExpired(false)
-      },
-      async signUp(email, password) {
-        const result: SignUpResult = await auth.signUp(email, password)
-        if (!result.access_token) {
-          // Email confirmation is required and no mail is configured, so there
-          // is deliberately no session to open. Report it rather than pretending.
-          return { needsConfirmation: true, note: result.note }
-        }
-        const next: Session = {
-          access_token: result.access_token as string,
-          refresh_token: null,
-          expires_in: null,
-          user_id: result.user_id ?? '',
-          email: result.email ?? '',
-        }
-        saveSession(next)
-        setSession(next)
-        return { needsConfirmation: false }
-      },
-      async signInWithGoogle(customEmail?: string) {
-        try {
-          const res = await oauthStart('google')
-          if (res?.authorization_url && !res.authorization_url.includes('example.com')) {
-            window.location.href = res.authorization_url
-            return
-          }
-        } catch {
-          // In development or if the OAuth provider route is unavailable, proceed with direct verified Google session
-        }
-        const email = customEmail || 'siwonikuayomide123@gmail.com'
-        const googleSession: Session = {
-          access_token: 'google-oauth-' + Math.random().toString(36).substring(2),
-          refresh_token: null,
-          expires_in: 3600 * 24 * 7,
-          user_id: 'usr_google_' + Math.random().toString(36).substring(2, 10),
-          email,
-        }
-        saveSession(googleSession)
-        setSession(googleSession)
-        setExpired(false)
-        const fallback = demo.business as unknown as Business
-        setBusinesses([fallback])
-        setActiveId(fallback.id)
+        setError(null)
+        const signedIn = await signInAsPlatformAdmin(email, password)
+        setSession(signedIn)
       },
       signOut() {
-        clearSession()
-        window.localStorage.removeItem(BUSINESS_KEY)
+        clearAdminSession()
         setSession(null)
-        setBusinesses([])
-        setActiveId(null)
-      },
-      selectBusiness(id) {
-        setActiveId(id)
-        window.localStorage.setItem(BUSINESS_KEY, id)
-      },
-      refreshBusinesses() {
-        setBusinessRevision((revision) => revision + 1)
+        setError(null)
       },
     }),
-    [session, businesses, activeId, loading, expired],
+    [session, loading, error],
   )
 
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>
+  return <Context.Provider value={value}>{children}</Context.Provider>
 }
 
-export function useSession(): SessionState {
-  const ctx = useContext(Ctx)
-  if (!ctx) throw new Error('useSession must be used inside SessionProvider')
-  return ctx
-}
-
-/** The active business id, or null when the user has no workspace yet. */
-export function useBusinessId(): string | null {
-  return useSession().activeBusiness?.id ?? null
+export function useSession(): AdminSessionContext {
+  const context = useContext(Context)
+  if (!context) throw new Error('useSession must be used inside SessionProvider')
+  return context
 }
