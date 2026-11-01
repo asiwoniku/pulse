@@ -95,13 +95,30 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('release gate keeps sample records out of the live entry point', (
+  testWidgets('unconfigured bootstrap does not silently show sample records', (
     tester,
   ) async {
-    await tester.pumpWidget(const PulseBuildGate());
+    await tester.pumpWidget(const PulseBootstrap());
+    await tester.pumpAndSettle();
 
-    expect(find.text('Pulse is not configured for live use'), findsOneWidget);
+    expect(find.text('Pulse is not connected yet'), findsOneWidget);
     expect(find.text('PLS-NG-00042'), findsNothing);
     expect(find.text('ORD-2026-00184'), findsNothing);
+    expect(find.text('Open offline preview'), findsOneWidget);
+  });
+
+  testWidgets('offline preview requires an explicit debug action', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const PulseBootstrap());
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('Open offline preview'));
+    await tester.tap(find.text('Open offline preview'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Demo preview · all data is sample only'), findsOneWidget);
+    expect(find.text('Today at a glance'), findsOneWidget);
+    expect(find.text('12'), findsOneWidget);
   });
 }

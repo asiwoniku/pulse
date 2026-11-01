@@ -8,10 +8,9 @@ truth**, and **an unconfigured integration is shown as unconfigured**.
 ## Shape
 
 ```
-Flutter mobile (Android)       Partner web portal
-     |    offline preview           |
-     |    (live wiring pending)     | HTTPS / user token
-     +------------------------------+
+Flutter partner + driver apps   Partner web portal
+     |  Auth / RLS / RPC              | HTTPS / user token
+     +--------------------------------+
                     |
           Supabase (PostgREST · Auth ·
                     Realtime · Storage)
@@ -25,9 +24,10 @@ Platform Admin web (separate app)
 ```
 
 The earlier Kotlin/Compose app is retained under `android/` as a prototype.
-The active Android project is `mobile/`, implemented in Flutter. The current
-Flutter build intentionally uses local example records only; it does not yet
-connect to Supabase.
+The active Android project is `mobile/`, implemented in Flutter. With Supabase
+build-time configuration, Pulse signs into the live workspace and Pulser reads
+driver assignments and invokes authorized driver RPCs. The offline preview is a
+separate, explicit debug-only path and is never used as a fallback for live reads.
 
 There is intentionally nothing between the clients and Postgres (ADR-002). What
 the clients send is a request to do something; what decides whether it may happen

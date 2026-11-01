@@ -50,8 +50,8 @@ positioned to be live.
 | **Pass Supabase URL + anon key into Flutter** | Mobile reaches the live project | `--dart-define=SUPABASE_URL=https://...` + `--dart-define=SUPABASE_ANON_KEY=sb_publishable_...` at `flutter run` / `flutter build`. |
 | **Google sign-in client ID** | Mobile OAuth (Google) | `GOOGLE_CLIENT_ID` from Google Cloud console (same value used in Supabase providers). |
 | **Session refresh + persistence** | Mobile stays logged in | Already implemented (`FlutterSecureStorage` + `autoRefreshToken`). Verify offline-paste works. |
-| **Staff-ID sign-in (driver)** | Driver accounts use `staff_id`, not email | Already implemented via `staff_login_email()` SECURITY DEFINER. Requires `drivers.staff_id` + `account_active`. |
-| **Config gate** | Never ship demo data as live | `config.dart` returns an honest missing-flags screen; release build shows the gate. Keep it. |
+| **Staff-ID sign-in (driver)** | Drivers authenticate with company-issued email today; staff-ID lookup is not implemented in the migrations. Do not expose Auth email lookup to unauthenticated callers; use a trusted provisioning flow or opaque login mapping. |
+| **Config gate** | Never ship demo data as live | Configured builds enter the live app; unconfigured builds show missing flags. The offline preview is an explicit debug-only action. |
 
 ### 1.3 Provider integrations (the "ext" plane)
 `list: [payments, push/FCM, maps, WhatsApp, SMTP] — each a separate credential set`
@@ -84,4 +84,3 @@ then push, WhatsApp, payments, then SMTP.
 | **Customer discovery / booking** | customer-facing product decisions | A `customers` side panel in the portal: browse open offers, accept → creates an order as a **customer** member of the carrier business. Clearest "commence now" item — no new table needed, just new RPCs. |
 | **Public shipment passport** | customer app + product API | Public read endpoint for a `PLS-…` passport (no auth). |
 | **Customer app** | product API | A first mobile web journey for the customer; outside this test run. |
-

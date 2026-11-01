@@ -13,20 +13,13 @@ import 'widgets.dart';
 import 'data/pulse_data.dart';
 
 void main() {
-  runApp(kReleaseMode ? const PulseBuildGate() : const PulseApp());
+  runApp(const PulseBootstrap());
 }
 
 /// Decides, once, which app to show.
 ///
-/// Three outcomes, and the order matters:
-///  1. Release build -> the existing gate (unchanged).
-///  2. Configured    -> `LivePulseApp`, which talks to Postgres.
-///  3. Not configured -> the configuration screen, which names the missing flags.
-///
-/// The point of (3) is that the app never falls back to sample rows while claiming
-/// to be live. `PulseApp` below is the existing offline preview and stays reachable
-/// through an explicit button on the configuration screen, clearly labelled — so the
-/// demo can be reviewed on a device, but never by accident.
+/// A configured build enters the live partner app. An unconfigured build names
+/// the missing flags; debug builds may explicitly open the offline preview.
 class PulseBootstrap extends StatefulWidget {
   const PulseBootstrap({super.key});
 
@@ -36,11 +29,14 @@ class PulseBootstrap extends StatefulWidget {
 
 class _PulseBootstrapState extends State<PulseBootstrap> {
   late Future<PulseData?> _future = PulseData.bootstrap();
+  bool _showPreview = false;
 
   void _retry() => setState(() => _future = PulseData.bootstrap());
 
   @override
   Widget build(BuildContext context) {
+    if (_showPreview) return const PulseApp();
+
     return FutureBuilder<PulseData?>(
       future: _future,
       builder: (BuildContext context, AsyncSnapshot<PulseData?> snapshot) {
@@ -57,9 +53,19 @@ class _PulseBootstrapState extends State<PulseBootstrap> {
               body: Center(
                 child: Padding(
                   padding: const EdgeInsets.all(24),
-                  child: Text(
-                    'Pulse could not start:\n${snapshot.error}',
-                    textAlign: TextAlign.center,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        'Pulse could not start:\n${snapshot.error}',
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        onPressed: _retry,
+                        child: const Text('Try again'),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -71,7 +77,11 @@ class _PulseBootstrapState extends State<PulseBootstrap> {
         if (data == null) {
           return MaterialApp(
             debugShowCheckedModeBanner: false,
-            home: ConfigurationScreen(onRetry: _retry),
+            home: ConfigurationScreen(
+              onOpenPreview: kDebugMode
+                  ? () => setState(() => _showPreview = true)
+                  : null,
+            ),
           );
         }
         return PulseWorkspaceApp(data: data);
@@ -166,56 +176,6 @@ class PulseShell extends StatefulWidget {
 
   @override
   State<PulseShell> createState() => _PulseShellState();
-}
-
-class PulseBuildGate extends StatelessWidget {
-  const PulseBuildGate({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Pulse Logistics',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: pulseTeal),
-      ),
-      home: Scaffold(
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(28),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.lock_outline_rounded,
-                    size: 38,
-                    color: pulseTeal,
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    'Pulse is not configured for live use',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 9),
-                  const Text(
-                    'This release build has no connected authentication or data service. '
-                    'Offline sample workflows are available only in a debug build.',
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class _PulseShellState extends State<PulseShell> {

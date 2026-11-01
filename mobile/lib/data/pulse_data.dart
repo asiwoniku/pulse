@@ -65,28 +65,23 @@ class PulseData {
   static const String _businessKey = 'pulse.business_id';
   static const String _demoKey = 'pulse.demo';
 
-  static const FlutterSecureStorage _prefs = FlutterSecureStorage();
+  static const FlutterSecureStorage _prefs = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  );
+  static bool _isDemoMode = false;
+  static Future<Supabase>? _supabaseInitialization;
 
   /// Demo mode is opt-in and remembered per device. Nothing enables it by
   /// accident: no URL parameter, no environment variable.
-  static bool get isDemoMode {
-    try {
-      return _prefs.read(key: _demoKey) == '1';
-    } catch (_) {
-      return false;
-    }
-  }
+  static bool get isDemoMode => _isDemoMode;
 
   static Future<void> setDemoMode(bool on) async {
-    try {
-      if (on) {
-        await _prefs.write(key: _demoKey, value: '1');
-      } else {
-        await _prefs.delete(key: _demoKey);
-      }
-    } catch (_) {
-      /* Storage unavailable: demo simply cannot be enabled. */
+    if (on) {
+      await _prefs.write(key: _demoKey, value: '1');
+    } else {
+      await _prefs.delete(key: _demoKey);
     }
+    _isDemoMode = on;
   }
 
   SupabaseClient get client => _client;
@@ -100,17 +95,23 @@ class PulseData {
   /// needs to see and fix, not a crash, so every caller handles null by design.
   static Future<PulseData?> bootstrap() async {
     if (!PulseConfig.hasSupabase) return null;
-    await Supabase.initialize(
-      url: PulseConfig.supabaseUrl,
-      anonKey: PulseConfig.supabaseAnonKey,
-      authOptions: const FlutterAuthClientOptions(
-        autoRefreshToken: true,
-        persistSession: true,
-      ),
-    );
+    try {
+      await (_supabaseInitialization ??= Supabase.initialize(
+        url: PulseConfig.supabaseUrl,
+        publishableKey: PulseConfig.supabaseAnonKey,
+        authOptions: const FlutterAuthClientOptions(
+          autoRefreshToken: true,
+          persistSession: true,
+        ),
+      ));
+    } on Exception {
+      _supabaseInitialization = null;
+      rethrow;
+    }
     final storage = const FlutterSecureStorage(
       aOptions: AndroidOptions(encryptedSharedPreferences: true),
     );
+    _isDemoMode = await storage.read(key: _demoKey) == '1';
     final data = PulseData._(
       Supabase.instance.client,
       storage,
@@ -127,7 +128,7 @@ class PulseData {
             .setSession(refresh, accessToken: token)
             .timeout(const Duration(seconds: 20));
         if (response.session == null) await data.signOut();
-      } catch (_) {
+      } on AuthException {
         await data.signOut();
       }
     }
@@ -139,13 +140,7 @@ class PulseData {
     await _storage.write(key: _refreshKey, value: session.refreshToken ?? '');
   }
 
-  /// Sign in with an email address or a staff ID.
-  ///
-  /// Supabase authenticates on email, so a staff login resolves the account's
-  /// reserved address first, through a `SECURITY DEFINER` function the database
-  /// owns. The mapping is deliberately never held in the app: a stolen binary
-  /// cannot be used to enumerate which staff IDs exist, and an unknown ID reports
-  /// the same wording as a wrong password.
+  /// Sign in with the email issued to this account.
   Future<String> signIn(String identifier, String password) async {
     final id = identifier.trim();
     if (id.isEmpty || password.isEmpty) {
@@ -167,9 +162,8 @@ class PulseData {
     }
 
     try {
-      final email = id.contains('@') ? id : await _staffEmail(id);
       final response = await _client.auth
-          .signInWithPassword(email: email, password: password)
+          .signInWithPassword(email: id, password: password)
           .timeout(const Duration(seconds: 20));
       if (response.session == null) {
         throw const PulseApiError('That sign-in did not return a session.');
@@ -211,20 +205,6 @@ class PulseData {
     } on PostgrestException catch (e) {
       throw PulseApiError.fromPostgrest(e);
     }
-  }
-
-  Future<String> _staffEmail(String staffId) async {
-    final result = await _client.rpc(
-      'staff_login_email',
-      params: <String, dynamic>{'p_staff_id': staffId},
-    );
-    final value = result is List && result.isNotEmpty ? result.first : result;
-    if (value == null) {
-      // Deliberately identical to a wrong password. Anything else turns this into
-      // an oracle for discovering which staff IDs are real.
-      throw const PulseApiError('Invalid login credentials');
-    }
-    return value.toString();
   }
 
   /// Whether this build offers Google sign-in.
@@ -331,6 +311,7 @@ class PulseData {
 
   /// Workspaces this account belongs to. Empty means none — never a substitute.
   Future<List<Workspace>> workspaces() async {
+    if (isDemoMode) return demoWorkspaces();
     try {
       final rows = await _client
           .from('businesses')
@@ -356,6 +337,7 @@ class PulseData {
     String kind = 'carrier',
     String? phoneE164,
   }) async {
+    await _guardDemo('Creating a workspace needs a live account.');
     try {
       await _client.rpc(
         'create_business',
@@ -379,6 +361,7 @@ class PulseData {
 
   /// Redeems an invitation code. Only the account it was issued to can use it.
   Future<void> acceptInvitation(String code) async {
+    await _guardDemo('Accepting an invitation needs a live account.');
     try {
       await _client.rpc(
         'accept_invitation',
@@ -400,12 +383,14 @@ class PulseData {
     if (isDemoMode) return demoShipments();
     try {
       final rows = await _client
-          .from('shipments')
+          .from('pulse_shipments')
           .select(
             'id,pulse_shipment_id,business_id,current_status,order_id,created_at,'
             'last_event_received_at,last_verified_event_at,last_verified_location',
           )
-          .eq('business_id', businessId)
+          .or(
+            'business_id.eq.$businessId,originator_business_id.eq.$businessId',
+          )
           .order('created_at', ascending: false)
           .range(offset, offset + limit - 1);
       return (rows as List<dynamic>)
@@ -420,7 +405,7 @@ class PulseData {
     if (isDemoMode) return demoEvents();
     try {
       final rows = await _client
-          .from('shipment_events')
+          .from('pulse_shipment_events')
           .select(
             'event_id,event_type,source_type,source_reference,occurred_at,received_at,'
             'location,verification_status,order_status_from,order_status_to',
@@ -449,9 +434,11 @@ class PulseData {
           .from('orders')
           .select(
             'id,reference,status,service_type,pickup_text,destination_text,'
-            'price_amount,currency,payment_status,promised_at,created_at,requires_otp',
+            'price_amount,currency,payment_status,promised_at,created_at,delivery_otp_required',
           )
-          .eq('business_id', businessId)
+          .or(
+            'business_id.eq.$businessId,originator_business_id.eq.$businessId',
+          )
           .order('created_at', ascending: false)
           .range(offset, offset + limit - 1);
       return (rows as List<dynamic>)
@@ -513,8 +500,7 @@ class PulseData {
           .from('driver_assignments')
           .select(
             'id,order_id,status,scheduled_start,notes,'
-            'order:orders!inner(id,reference,pickup_text,destination_text,requires_otp),'
-            'shipments!inner(pulse_shipment_id)',
+            'order:orders!inner(id,reference,pickup_text,destination_text,delivery_otp_required)',
           )
           .eq('driver_id', driverId)
           .order('scheduled_start', ascending: true, nullsFirst: false);
@@ -584,10 +570,10 @@ class PulseData {
         'capture_proof_of_delivery',
         params: <String, dynamic>{
           'p_order_id': orderId,
-          'p_recipient_name': recipientName,
+          'p_delivered_to_name': recipientName,
           'p_photo_url': photoUrl,
           'p_signature_url': signatureUrl,
-          'p_otp': otp,
+          'p_otp_code': otp,
         },
       );
     } on PostgrestException catch (e) {
@@ -604,7 +590,7 @@ class PulseData {
         'set_driver_availability',
         params: <String, dynamic>{
           'p_driver_id': driverId,
-          'p_available': available,
+          'p_status': available ? 'available' : 'offline',
         },
       );
     } on PostgrestException catch (e) {

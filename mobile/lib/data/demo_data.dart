@@ -12,9 +12,9 @@ String _ago(int minutes) =>
 
 /// An account offered on the sign-in screen in demo mode.
 ///
-/// A partner signs in as themselves; a driver signs in with the **staff id** their
-/// partner would have issued. There is no driver sign-up anywhere, demo or live —
-/// an account exists because a partner created it.
+/// A partner signs in as themselves; a driver uses the company email the partner
+/// issued. There is no driver sign-up in Pulser — an account exists because a
+/// partner provisioned it.
 class DemoAccount {
   const DemoAccount({
     required this.identifier,
@@ -37,9 +37,9 @@ const DemoAccount demoPartnerAccount = DemoAccount(
 );
 
 const DemoAccount demoDriverAccount = DemoAccount(
-  identifier: 'PLS-DRV-0007',
+  identifier: 'driver@demo-haulage.example',
   password: 'demo-password',
-  roleLabel: 'Driver · staff id login',
+  roleLabel: 'Driver · Demo Haulage Co.',
   description: 'Jobs, proof of delivery, availability. No money, ever.',
 );
 

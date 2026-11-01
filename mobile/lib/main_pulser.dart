@@ -52,11 +52,37 @@ class _PulserBootstrapState extends State<PulserBootstrap> {
             home: Scaffold(body: Center(child: CircularProgressIndicator())),
           );
         }
+        if (snapshot.hasError) {
+          return MaterialApp(
+            debugShowCheckedModeBanner: false,
+            home: Scaffold(
+              body: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        'Pulser could not start:\n${snapshot.error}',
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        onPressed: _retry,
+                        child: const Text('Try again'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
         final data = snapshot.data;
         if (data == null) {
           return MaterialApp(
             debugShowCheckedModeBanner: false,
-            home: ConfigurationScreen(onRetry: _retry),
+            home: const ConfigurationScreen(),
           );
         }
         return PulserApp(data: data);
@@ -78,6 +104,7 @@ class _PulserAppState extends State<PulserApp> {
   bool _signedIn = false;
   bool _isDriver = false;
   bool _checked = false;
+  String? _verificationError;
 
   @override
   void initState() {
@@ -92,12 +119,27 @@ class _PulserAppState extends State<PulserApp> {
       if (!mounted) return;
       setState(() {
         _isDriver = isDriver;
+        _verificationError = null;
         _checked = true;
       });
-    } on PulseApiError {
+    } on PulseApiError catch (e) {
       if (!mounted) return;
-      setState(() => _checked = true);
+      setState(() {
+        _verificationError = e.message;
+        _checked = true;
+      });
     }
+  }
+
+  Future<void> _signOut() async {
+    await widget.data.signOut();
+    if (!mounted) return;
+    setState(() {
+      _signedIn = false;
+      _isDriver = false;
+      _checked = false;
+      _verificationError = null;
+    });
   }
 
   @override
@@ -119,9 +161,23 @@ class _PulserAppState extends State<PulserApp> {
             )
           : !_checked
           ? const Scaffold(body: Center(child: CircularProgressIndicator()))
+          : _verificationError != null
+          ? Scaffold(
+              appBar: AppBar(title: const Text('Pulser')),
+              body: ErrorView(
+                message: _verificationError!,
+                onRetry: () {
+                  setState(() {
+                    _checked = false;
+                    _verificationError = null;
+                  });
+                  _verify();
+                },
+              ),
+            )
           : _isDriver
-          ? PulserHome(data: widget.data)
-          : WrongAppScreen(onSignOut: widget.data.signOut),
+          ? PulserHome(data: widget.data, onSignOut: () => _signOut())
+          : WrongAppScreen(onSignOut: () => _signOut()),
     );
   }
 }

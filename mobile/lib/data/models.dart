@@ -180,7 +180,7 @@ class OrderRow {
       currency: j['currency'] as String?,
       paymentStatus: j['payment_status'] as String?,
       promisedAt: DateTime.tryParse((j['promised_at'] as String?) ?? ''),
-      requiresOtp: j['requires_otp'] as bool?,
+      requiresOtp: j['delivery_otp_required'] as bool?,
     );
   }
 }
@@ -305,7 +305,7 @@ class Assignment {
       orderReference: o['reference'] as String?,
       pickupText: o['pickup_text'] as String?,
       destinationText: o['destination_text'] as String?,
-      requiresOtp: o['requires_otp'] as bool?,
+      requiresOtp: o['delivery_otp_required'] as bool?,
     );
   }
 }

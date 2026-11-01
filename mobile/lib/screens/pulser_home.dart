@@ -13,8 +13,13 @@ import 'live_workspace_shell.dart';
 /// design — `guard_order_columns` (0013) makes them unwritable by a driver, so
 /// showing them would advertise a screen that cannot do anything.
 class PulserHome extends StatefulWidget {
-  const PulserHome({super.key, required this.data});
+  const PulserHome({
+    super.key,
+    required this.data,
+    required this.onSignOut,
+  });
   final PulseData data;
+  final VoidCallback onSignOut;
 
   @override
   State<PulserHome> createState() => _PulserHomeState();
@@ -88,7 +93,7 @@ class _PulserHomeState extends State<PulserHome> {
           IconButton(
             tooltip: 'Sign out',
             icon: const Icon(Icons.logout),
-            onPressed: () => widget.data.signOut(),
+            onPressed: widget.onSignOut,
           ),
         ],
       ),

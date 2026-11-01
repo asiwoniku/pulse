@@ -22,6 +22,11 @@ class _PulseWorkspaceAppState extends State<PulseWorkspaceApp> {
 
   void _onSignedIn() => setState(() => _signedIn = true);
 
+  Future<void> _onSignedOut() async {
+    await widget.data.signOut();
+    if (mounted) setState(() => _signedIn = false);
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -32,7 +37,7 @@ class _PulseWorkspaceAppState extends State<PulseWorkspaceApp> {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF176B64)),
       ),
       home: _signedIn
-          ? WorkspaceHome(data: widget.data)
+          ? WorkspaceHome(data: widget.data, onSignOut: () => _onSignedOut())
           : SignInScreen(data: widget.data, onSignedIn: _onSignedIn),
     );
   }
@@ -161,7 +166,12 @@ class _SignInScreenState extends State<SignInScreen> {
   /// Turning demo on fills the demo account in, so a reviewer never has to
   /// remember a fictional address to see the flow.
   Future<void> _toggleDemo(bool on) async {
-    await PulseData.setDemoMode(on);
+    try {
+      await PulseData.setDemoMode(on);
+    } on Exception catch (e) {
+      if (mounted) setState(() => _error = 'Demo mode could not be saved: $e');
+      return;
+    }
     if (!mounted) return;
     if (on) {
       final account = widget.data.demoAccount;
@@ -256,17 +266,15 @@ class _SignInScreenState extends State<SignInScreen> {
                   ],
                   TextField(
                     controller: _identifier,
-                    keyboardType: widget.data.app.isPulser
-                        ? TextInputType.text
-                        : TextInputType.emailAddress,
+                    keyboardType: TextInputType.emailAddress,
                     autocorrect: false,
                     textCapitalization: TextCapitalization.none,
                     decoration: InputDecoration(
                       labelText: widget.data.app.isPulser
-                          ? 'Staff ID'
-                          : 'Email or staff ID',
+                          ? 'Company email'
+                          : 'Email',
                       helperText: widget.data.app.isPulser
-                          ? 'Your company gives you this. There is no sign-up here.'
+                          ? 'Use the email and password issued by your company.'
                           : null,
                       border: const OutlineInputBorder(),
                     ),

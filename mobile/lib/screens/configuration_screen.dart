@@ -8,11 +8,12 @@ import '../config.dart';
 /// crash or a silent empty list. It names the exact flags to pass, because the
 /// alternative is a person staring at an error that means nothing.
 class ConfigurationScreen extends StatelessWidget {
-  const ConfigurationScreen({super.key, required this.onRetry});
+  const ConfigurationScreen({
+    super.key,
+    this.onOpenPreview,
+  });
 
-  /// Re-checks configuration without a full restart, so someone can fix their
-  /// launch options and retry without retyping anything.
-  final VoidCallback onRetry;
+  final VoidCallback? onOpenPreview;
 
   @override
   Widget build(BuildContext context) {
@@ -58,6 +59,11 @@ class ConfigurationScreen extends StatelessWidget {
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
+                  const Text(
+                    'Build-time configuration cannot change while this app is '
+                    'running. Rebuild and relaunch after adding these values.',
+                  ),
+                  const SizedBox(height: 12),
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
@@ -82,12 +88,20 @@ class ConfigurationScreen extends StatelessWidget {
                     "tenant's data.",
                     style: TextStyle(fontSize: 12),
                   ),
-                  const SizedBox(height: 24),
-                  FilledButton.icon(
-                    onPressed: onRetry,
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Check again'),
-                  ),
+                  if (onOpenPreview != null) ...<Widget>[
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: onOpenPreview,
+                      icon: const Icon(Icons.visibility_outlined),
+                      label: const Text('Open offline preview'),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Preview records are fictional and stay on this device. '
+                      'This option is available only in debug builds.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ],
                 ],
               ),
             ),

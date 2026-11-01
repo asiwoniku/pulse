@@ -1,11 +1,13 @@
 # Pulse RPC and read contract
 
-This is the shared Supabase surface for live clients. The Flutter project under
-`mobile/` currently remains an offline preview and has not integrated these
-calls. This table is the contract: the parameter names and types below are the
-Postgres signatures in `supabase/migrations`, so a client that matches this
-file matches the database. Anything a client is tempted to compute itself is
-listed at the bottom as **server-derived** — do not reimplement it.
+This is the shared Supabase surface for live clients. The Flutter apps in
+`mobile/` use the identity/workspace, shipment/order read, and driver assignment
+contracts described below; customer booking and provider ingestion are not yet
+implemented in the mobile client. This table is the contract: the parameter
+names and types below are the Postgres signatures in `supabase/migrations`, so
+a client that matches this file matches the database. Anything a client is
+tempted to compute itself is listed at the bottom as **server-derived** — do not
+reimplement it.
 
 Calling convention: `POST {SUPABASE_URL}/rest/v1/rpc/<name>` with the user's
 `Authorization: Bearer <access_token>`, `apikey`, `Content-Type: application/json`,

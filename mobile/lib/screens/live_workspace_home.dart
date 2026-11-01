@@ -9,8 +9,13 @@ import 'live_workspace_shell.dart';
 /// the two real ways forward. Being in no company is a real state with a real next
 /// action; it is never filled with a sample company.
 class WorkspaceHome extends StatefulWidget {
-  const WorkspaceHome({super.key, required this.data});
+  const WorkspaceHome({
+    super.key,
+    required this.data,
+    required this.onSignOut,
+  });
   final PulseData data;
+  final VoidCallback onSignOut;
 
   @override
   State<WorkspaceHome> createState() => _WorkspaceHomeState();
@@ -94,7 +99,7 @@ class _WorkspaceHomeState extends State<WorkspaceHome> {
           IconButton(
             tooltip: 'Sign out',
             icon: const Icon(Icons.logout),
-            onPressed: () => widget.data.signOut(),
+            onPressed: widget.onSignOut,
           ),
         ],
       );
@@ -178,7 +183,7 @@ class _WorkspaceHomeState extends State<WorkspaceHome> {
                       ].whereType<String>().join(' · ')),
                       onTap: () async {
                         await widget.data.selectBusiness(w.id);
-                        if (!context.mounted) return;
+                        if (!mounted) return;
                         await Navigator.of(context).push(MaterialPageRoute<void>(
                           builder: (_) =>
                               WorkspaceShell(data: widget.data, workspace: w),

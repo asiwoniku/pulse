@@ -1,65 +1,36 @@
-# Pulse mobile — Android Studio project brief
+# Pulse mobile — Android project brief
 
-Open the **`mobile` folder** in Android Studio with the Flutter plugin installed.
-This is the active Flutter application for Pulse. It is currently an offline,
-interactive product preview and is not connected to Supabase or real accounts.
+The active mobile clients are Flutter apps under `mobile/`. Pulse is the partner
+workspace; Pulser is a separate driver app using `lib/main_pulser.dart`.
 
-## What the preview demonstrates
+With Supabase URL and publishable/anon key supplied at build time, the clients
+use Supabase Auth and the signed-in user's token for PostgREST/RPC access. The
+database remains responsible for authorization, order state transitions, and
+the shipment event trail. Without configuration the app shows a setup screen.
+Only debug builds can explicitly open the fictional, device-only preview.
 
-* Operations dashboard with sample order and shipment summaries.
-* Searchable and filterable orders, with an order details sheet.
-* Shipment passports with a source-aware event timeline.
-* A sample carrier directory and a partner-request preview.
-* Driver task, availability, and delivery-progress screens.
-* Responsive bottom navigation on phones and a navigation rail on wider screens.
+## Live capabilities
 
-Every operational record is invented. Actions such as adding a shipment update,
-requesting a carrier, or changing a driver task are local preview interactions:
-they do not send network requests and are not persisted to a live workspace.
-The app visibly labels this boundary.
+- Pulse: email sign-in/sign-up, workspace creation and invitation acceptance,
+  live shipment passports, and live order lists.
+- Pulser: driver account verification, assigned jobs, accept/decline, delivery
+  attempts, proof of delivery, and availability.
 
-## Run and test
+The apps do not include customer booking/tracking, account provisioning,
+provider webhook ingestion, or live payments/maps/notifications/messaging yet.
+Never use a service-role key in either client. A release must be configured
+against a deployed database and signed with a production key before distribution.
 
-From PowerShell in this folder:
+## Build and test
+
+See [README.md](./README.md) for run commands and flavor names.
 
 ```powershell
 flutter pub get
-flutter run
 flutter analyze
 flutter test
 flutter build apk --debug
 ```
 
-`flutter run` starts the debug preview. The resulting APK is written to
-`build/app/outputs/flutter-apk/app-debug.apk`.
-
-Release builds show a configuration gate instead of the sample workflows. Do
-not publish a release until authentication, live data access, authorization, and
-production error states have been implemented and reviewed.
-
-## Code map
-
-```text
-lib/main.dart                  Material 3 app shell and adaptive navigation
-lib/demo_data.dart             Explicitly fictional offline example records
-lib/screens/                   Dashboard, orders, shipments, network, driver
-lib/widgets.dart               Shared cards, status, route and preview UI
-test/widget_test.dart          Core flow and phone/tablet layout tests
-```
-
-## Next integration work
-
-Supabase project configuration is intentionally deferred. Before production
-operations are enabled, add sign-in/session handling, workspace and role
-selection, RLS-backed reads, authorized RPC mutations, shipment pagination, and
-real loading/error/empty states. Never ship service-role credentials in a
-mobile app. The database remains the authority for access, state transitions,
-canonical status, and event verification.
-
-Customer-side booking and tracking, provider verification, secure document
-storage, webhook ingestion, payments, maps, notifications, and messaging also
-remain unconfigured external/product work. This preview does not simulate their
-live behavior.
-
-The earlier native Kotlin prototype remains in `../android`; it is not the
-canonical Android app now that the Flutter project exists.
+The earlier Kotlin/Compose prototype remains in `../android`; it is not the
+canonical mobile implementation.
